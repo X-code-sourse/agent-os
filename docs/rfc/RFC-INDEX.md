@@ -52,7 +52,7 @@ RFCs (Requests for Comments) define how specific modules and protocols are imple
 ### Evolution
 | ID | Title | Status |
 |----|-------|--------|
-| RFC-0600 | Loop Learning | — |
+| RFC-0600 | Loop Learning | Draft |
 | RFC-0601 | Optimization | — |
 | RFC-0602 | Experiment Framework | — |
 
