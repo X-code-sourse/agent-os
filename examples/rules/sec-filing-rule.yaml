@@ -1,0 +1,55 @@
+# SEC Filing Rule Example
+
+This Rule constrains the financial analysis Task to use SEC filings.
+
+```yaml
+rule_id: rule://finance/sec-filing
+version: 1.2.0
+description: "Financial research must use SEC filings as the authoritative source"
+
+scope:
+  workflows:
+    - "wf://finance/*"
+  task_types:
+    - research
+  domains:
+    - sec_filing
+
+constraints:
+
+  - id: primary_source_requirement
+    description: "At least one source must be an SEC filing"
+    field: "output.sources[*].type"
+    condition: "contains('sec') == true"
+    severity: required
+    on_violation: retry_with_additional_sources
+
+  - id: filing_recency
+    description: "SEC filings must be within the last 4 fiscal quarters"
+    field: "output.sources[type='sec'].date"
+    condition: "all(days_ago <= 365)"
+    severity: required
+    on_violation: retry_with_recent_filings
+
+  - id: minimum_quarters
+    description: "At least one filing must exist for each of the last 4 quarters"
+    field: "output.sources[type='sec'].fiscal_quarter"
+    condition: "unique_quarters >= 4"
+    severity: warning
+    on_violation: note_partial_coverage
+
+governance:
+  status: approved
+  approved_by: "human:chief-analyst"
+  approved_at: "2026-06-01T00:00:00Z"
+  version_history:
+    - version: "1.0.0"
+      change: "Initial rule"
+      date: "2026-01-15"
+    - version: "1.1.0"
+      change: "Added recency constraint"
+      date: "2026-03-01"
+    - version: "1.2.0"
+      change: "Added minimum quarters as warning"
+      date: "2026-06-01"
+```

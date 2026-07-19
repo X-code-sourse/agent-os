@@ -1,0 +1,117 @@
+# Finance Stock Research — Workflow Example
+
+This example demonstrates a complete Finance Stock Research Workflow using the Agent OS Workflow specification.
+
+```yaml
+workflow_id: wf://finance/stock-research
+version: 1.0.0
+description: >
+  Standard workflow for researching a publicly traded company
+  and producing an investment recommendation report.
+
+stages:
+  - id: company_identification
+    type: task_node
+    depends_on: []
+    condition: "input.has_company == true"
+    requirements:
+      capability_type: research
+      domain: [general]
+      language: en
+    description: "Identify and verify the company name, ticker, and exchange"
+
+  - id: news_analysis
+    type: task_node
+    depends_on: [company_identification]
+    condition: "always"
+    requirements:
+      capability_type: research
+      domain: [finance, news]
+      language: en
+    description: "Gather recent news, press releases, and market sentiment"
+
+  - id: financial_analysis
+    type: task_node
+    depends_on: [company_identification]
+    condition: "user_intent.depth in ['financial', 'deep']"
+    requirements:
+      capability_type: research
+      domain: [finance, sec_filing]
+      language: en
+    description: "Analyze SEC filings, financial statements, and key ratios"
+
+  - id: valuation_analysis
+    type: task_node
+    depends_on: [financial_analysis]
+    condition: "user_intent.depth in ['valuation', 'deep']"
+    requirements:
+      capability_type: research
+      domain: [finance, valuation]
+      language: en
+    description: "Perform DCF, comparable company analysis, and price target"
+
+  - id: risk_assessment
+    type: task_node
+    depends_on: [financial_analysis, news_analysis]
+    condition: "user_intent.depth in ['risk', 'deep']"
+    requirements:
+      capability_type: research
+      domain: [finance, risk]
+      language: en
+    description: "Identify business, regulatory, and market risks"
+
+  - id: peer_comparison
+    type: task_node
+    depends_on: [financial_analysis]
+    condition: "user_intent.depth in ['deep']"
+    requirements:
+      capability_type: research
+      domain: [finance, peer_analysis]
+      language: en
+    description: "Compare against industry peers on key metrics"
+
+  - id: summary_report
+    type: task_node
+    depends_on:
+      - risk_assessment
+      - valuation_analysis
+      - peer_comparison
+    condition: "always"
+    requirements:
+      capability_type: writing
+      domain: [finance, report]
+      language: en
+    description: "Synthesize all analysis into a structured investment report"
+
+output_schema:
+  type: object
+  properties:
+    company:
+      type: object
+      properties:
+        name: { type: string }
+        ticker: { type: string }
+        exchange: { type: string }
+        sector: { type: string }
+    executive_summary: { type: string }
+    financial_highlights:
+      type: object
+      properties:
+        revenue: { type: string }
+        net_income: { type: string }
+        eps: { type: string }
+        pe_ratio: { type: string }
+    risk_factors:
+      type: array
+      items: { type: string }
+    recommendation:
+      type: string
+      enum: [strong_buy, buy, hold, sell, strong_sell]
+    price_target: { type: string }
+```
+
+## Notes
+
+- This is a **maximal graph**. The Planner will prune stages based on `condition` expressions at compile time.
+- Conditions reference `user_intent` (from the Intent object) and `input` (from the Goal).
+- `depends_on` defines the DAG edges. The Execution Engine will execute stages in topological order.

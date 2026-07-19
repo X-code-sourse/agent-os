@@ -1,0 +1,657 @@
+# SPEC-0000: Core Concepts & Object Model
+
+**Version:** 1.0
+**Status:** Draft
+**Type:** Foundation Specification
+**Supersedes:** Nothing
+
+---
+
+## 1. Purpose
+
+This specification defines the **Agent OS Object Model** — the universal language used across all RFCs, implementations, and ecosystem contributions. Every term defined here is authoritative. All subsequent documents must reference this specification rather than redefining terms.
+
+---
+
+## 2. Object Classification
+
+Every object in Agent OS belongs to exactly one of four classifications:
+
+| Classification | Description | Lifetime | Examples |
+|---------------|-------------|----------|----------|
+| **Definition Object** | Metadata that defines behavior, flow, or constraints. Immutable once published. | Until explicitly versioned out | Workflow, Rule, Capability Manifest, Profile |
+| **Runtime Object** | Exists during execution. Created, mutated, and destroyed by the Execution Engine. | Duration of execution | Task, Event, Execution |
+| **Persistent Object** | Durable data that accumulates over time. Read and written by the Data Plane. | Indefinite (subject to retention policy) | Knowledge, Memory, Experience, Execution Record |
+| **Infrastructure Object** | System-level components enabling communication, discovery, and coordination. | System lifetime | Event Bus, Registry |
+
+---
+
+## 3. Entity Definitions
+
+### 3.1 Goal
+
+| Property | Value |
+|----------|-------|
+| Definition | A user's declarative description of a desired end state, containing no process details |
+| Classification | Definition Object (transient — produced by User Plane, consumed by Kernel) |
+| Identity | `goal://<session_id>/<sequence>` |
+| State | Created → Resolved |
+| Owner | User Plane |
+| Lifecycle | Created when user submits → Resolved when Intent Engine produces Intent |
+
+**Serialization:**
+```json
+{
+  "goal_id": "goal://session_abc/001",
+  "text": "research Nvidia stock for investment recommendation",
+  "constraints": {
+    "max_cost": 1.0,
+    "max_duration": "300s",
+    "language": "en"
+  },
+  "session_id": "session_abc",
+  "created_at": "2026-07-19T10:00:00Z"
+}
+```
+
+---
+
+### 3.2 Intent
+
+| Property | Value |
+|----------|-------|
+| Definition | The Kernel's structured interpretation of a Goal, including detected domain, task type, and output requirements |
+| Classification | Definition Object (transient — produced by Intent Engine, consumed by Workflow Resolver and Planner) |
+| Identity | `intent://<execution_id>/<sequence>` |
+| State | Created → Resolved |
+| Owner | Control Plane (Intent Engine) |
+| Lifecycle | Created when Goal is resolved → Consumed when Planner produces Execution Plan |
+
+**Serialization:**
+```json
+{
+  "intent_id": "intent://exec_001/001",
+  "goal_id": "goal://session_abc/001",
+  "domain": "finance",
+  "task_type": "stock_research",
+  "priority": "high",
+  "output_format": "investment_report",
+  "confidence": 0.92,
+  "parameters": {
+    "company": "NVIDIA",
+    "ticker": "NVDA",
+    "depth": "deep"
+  }
+}
+```
+
+---
+
+### 3.3 Workflow
+
+| Property | Value |
+|----------|-------|
+| Definition | A declarative Graph describing Task dependencies and execution order. Contains no domain constraints |
+| Classification | Definition Object |
+| Identity | `wf://<namespace>/<name>@<version>` |
+| State | Draft → Published → Deprecated |
+| Owner | Metadata Plane (Registry) |
+| Lifecycle | Authored → Versioned → Published → Discovered → Deprecated |
+
+**Serialization:**
+```json
+{
+  "workflow_id": "wf://finance/stock-research",
+  "version": "2.1.0",
+  "description": "Standard stock research workflow",
+  "stages": [
+    {
+      "id": "news_analysis",
+      "type": "task_node",
+      "depends_on": [],
+      "condition": "input.has_company == true",
+      "requirements": {
+        "capability_type": "research",
+        "domain": ["finance", "news"],
+        "language": "en"
+      }
+    },
+    {
+      "id": "financial_analysis",
+      "type": "task_node",
+      "depends_on": ["news_analysis"],
+      "condition": "user_intent.depth in ['financial', 'deep']",
+      "requirements": {
+        "capability_type": "research",
+        "domain": ["finance", "sec_filing"],
+        "language": "en"
+      }
+    }
+  ],
+  "output_schema": { "$ref": "schemas/execution/report.json" }
+}
+```
+
+---
+
+### 3.4 Task
+
+| Property | Value |
+|----------|-------|
+| Definition | The smallest schedulable execution unit in Agent OS. **The only object the Execution Engine schedules** |
+| Classification | Runtime Object |
+| Identity | `task://<execution_id>/<sequence>` |
+| State | Created → Queued → Assigned → Running → WaitingReview → Reviewed → Completed / Failed / Cancelled |
+| Owner | Control Plane (Execution Engine) |
+| Lifecycle | Created by Planner in Execution Plan → Scheduled by Execution Engine → Executed by Capability → Reviewed → Completed |
+
+**State Machine:**
+```
+[Created] → [Queued] → [Assigned] → [Running] → [WaitingReview] → [Reviewed]
+                                                          │              │
+                                                          │         ┌────┴────┐
+                                                          │         │         │
+                                                     [Completed]  [Failed]  [ReplanRequest]
+                                                          │         │         │
+                                                          │         ├── [Retry] → [Running]
+                                                          │         └── [Skip] → [Skipped]
+                                                          │                   │
+                                                     [Archived]     [Cancelled]
+```
+
+**Serialization:**
+```json
+{
+  "task_id": "task://exec_001/003",
+  "workflow_stage_id": "financial_analysis",
+  "execution_id": "exec_001",
+  "type": "research",
+  "requirements": {
+    "capability_type": "research",
+    "domain": ["finance", "sec_filing"],
+    "language": "en"
+  },
+  "input": {
+    "company": "NVIDIA",
+    "ticker": "NVDA",
+    "depth": "full"
+  },
+  "context": {
+    "session_id": "session_abc",
+    "profile_id": "profile://finance/deep"
+  },
+  "state": "queued",
+  "retry_count": 0,
+  "max_retries": 3,
+  "created_at": "2026-07-19T10:00:05Z"
+}
+```
+
+---
+
+### 3.5 Rule
+
+| Property | Value |
+|----------|-------|
+| Definition | A Constraint that limits Task behavior, input, or output. Contains no flow information |
+| Classification | Definition Object |
+| Identity | `rule://<namespace>/<name>@<version>` |
+| State | Draft → Review → Experiment → Approved → Superseded |
+| Owner | Rule Governance |
+| Lifecycle | Authored → Reviewed → (Optional: Experiment) → Approved → Active → Superseded |
+
+**Serialization:**
+```json
+{
+  "rule_id": "rule://finance/sec-filing",
+  "version": "1.2.0",
+  "description": "Financial research must use SEC filings as primary source",
+  "scope": {
+    "workflows": ["wf://finance/*"],
+    "task_types": ["research"],
+    "domain": ["finance", "sec_filing"]
+  },
+  "constraints": [
+    {
+      "field": "output.sources",
+      "condition": "contains_source_type('sec') == true",
+      "severity": "required"
+    },
+    {
+      "field": "output.sources.sec",
+      "condition": "count >= 1 && within_quarters(4)",
+      "severity": "required"
+    }
+  ],
+  "governance": {
+    "status": "approved",
+    "approved_by": "human:chief-analyst",
+    "approved_at": "2026-06-01T00:00:00Z"
+  }
+}
+```
+
+---
+
+### 3.6 Profile
+
+| Property | Value |
+|----------|-------|
+| Definition | A cross-cutting configuration that controls Capability behavior, model preferences, and Rule overrides for one execution |
+| Classification | Definition Object |
+| Identity | `profile://<namespace>/<name>@<version>` |
+| State | Draft → Published → Deprecated |
+| Owner | Metadata Plane (Registry) |
+| Lifecycle | Authored → Published → Referenced by Execution Engine |
+
+**Serialization:**
+```json
+{
+  "profile_id": "profile://finance/deep",
+  "version": "1.0.0",
+  "capability_configs": {
+    "research": {
+      "preferred_models": ["claude-sonnet-4", "gpt-4o"],
+      "depth": "deep",
+      "citation_required": true,
+      "source_priority": ["sec", "reuters", "bloomberg"]
+    }
+  },
+  "rule_overrides": [],
+  "cost_budget": { "max_per_execution": 2.0, "max_per_task": 0.5 },
+  "quality_threshold": 0.9
+}
+```
+
+---
+
+### 3.7 Capability Manifest
+
+| Property | Value |
+|----------|-------|
+| Definition | A Capability's published declaration used by the Registry for discovery and Capability Negotiation |
+| Classification | Definition Object |
+| Identity | `cap://<namespace>/<name>@<version>` |
+| State | Registered → Active → Deprecated |
+| Owner | Metadata Plane (Registry) |
+| Lifecycle | Published by Capability author → Registered in Registry → Discovered and invoked |
+
+**Serialization:**
+```json
+{
+  "capability_id": "cap://nous-research/research-v2",
+  "version": "2.3.0",
+  "provider": "nous-research",
+  "type": "research",
+  "supported_domains": ["finance", "technology", "science", "general"],
+  "supported_languages": ["en", "zh", "ja"],
+  "interfaces": {
+    "execute": {
+      "input_schema": { "$ref": "schemas/capability/research-input.json" },
+      "output_schema": { "$ref": "schemas/capability/research-output.json" }
+    }
+  },
+  "performance": {
+    "quality_score": 0.94,
+    "avg_latency_ms": 2500,
+    "cost_per_call": 0.02,
+    "cost_per_token": 0.000003
+  },
+  "requirements": {
+    "models": ["claude-sonnet-4", "gpt-4o"],
+    "tools": ["browser", "search"],
+    "memory_types": ["knowledge", "cache"]
+  }
+}
+```
+
+---
+
+### 3.8 Capability Requirement
+
+| Property | Value |
+|----------|-------|
+| Definition | A declarative specification of what a Task needs from a Capability. Not bound to a specific implementation |
+| Classification | Definition Object (transient — embedded in Workflow stages or Task definitions) |
+| Identity | N/A (embedded, not independently addressable) |
+| State | N/A |
+| Owner | Workflow / Planner |
+| Lifecycle | Authored as part of Workflow → Resolved via Capability Negotiation |
+
+**Serialization:**
+```json
+{
+  "capability_type": "research",
+  "domain": ["finance", "sec_filing"],
+  "language": "en",
+  "quality_min": 0.85,
+  "cost_max": 0.5,
+  "latency_max_ms": 5000,
+  "required_features": ["citation", "source_attribution"]
+}
+```
+
+---
+
+### 3.9 Event
+
+| Property | Value |
+|----------|-------|
+| Definition | An immutable record of a state change in the system. The sole mechanism for cross-module communication |
+| Classification | Runtime Object (transient on Bus, persistent in Store) |
+| Identity | `event://<event_store>/<uuid>` |
+| State | Published → Delivered → (Optionally) Replayed |
+| Owner | Event Store (persisted) |
+| Lifecycle | Published by any module → Delivered to subscribers → Stored in Event Store → (Optionally) Replayed |
+
+**Serialization:**
+```json
+{
+  "event_id": "event://store-001/a1b2c3d4-...",
+  "event_type": "Task:Completed",
+  "version": 1,
+  "source": {
+    "module": "execution-engine",
+    "instance_id": "ee-001"
+  },
+  "payload": {
+    "task_id": "task://exec_001/003",
+    "status": "completed",
+    "result_summary": "SEC filings found for NVIDIA 2025-Q1 through 2025-Q4"
+  },
+  "context": {
+    "execution_id": "exec_001",
+    "session_id": "session_abc"
+  },
+  "timestamp": "2026-07-19T10:00:30.123Z"
+}
+```
+
+---
+
+### 3.10 Execution
+
+| Property | Value |
+|----------|-------|
+| Definition | A single run of an Execution Plan from start to terminal state |
+| Classification | Runtime Object |
+| Identity | `exec://<namespace>/<uuid>` |
+| State | Created → Running → Reviewing → Completed / Failed / Cancelled |
+| Owner | Control Plane (Execution Engine) |
+| Lifecycle | Created when Execution Plan is instantiated → Runs through Tasks → Terminates |
+
+**Serialization:**
+```json
+{
+  "execution_id": "exec://finance/550e8400-...",
+  "plan_hash": "sha256:abc123...",
+  "workflow": { "id": "wf://finance/stock-research", "version": "2.1.0" },
+  "rules_applied": [
+    { "id": "rule://finance/sec-filing", "version": "1.2.0" }
+  ],
+  "profile": { "id": "profile://finance/deep", "version": "1.0.0" },
+  "state": "running",
+  "task_count": 4,
+  "tasks_completed": 2,
+  "tasks_failed": 0,
+  "started_at": "2026-07-19T10:00:00Z"
+}
+```
+
+---
+
+### 3.11 Execution Record
+
+| Property | Value |
+|----------|-------|
+| Definition | An auditable, replayable snapshot of one complete execution, pinning all versions and inputs |
+| Classification | Persistent Object |
+| Identity | `record://<execution_id>` |
+| State | Created → Archived |
+| Owner | Data Plane (Event Store) |
+| Lifecycle | Created when Execution completes → Stored permanently (subject to retention) → Used for replay and analysis |
+
+**Serialization:**
+```json
+{
+  "execution_id": "exec://finance/550e8400-...",
+  "record_id": "record://exec://finance/550e8400-...",
+  "goal_hash": "sha256:...",
+  "workflow": { "id": "wf://finance/stock-research", "version": "2.1.0" },
+  "rules": [
+    { "id": "rule://finance/sec-filing", "version": "1.2.0" },
+    { "id": "rule://finance/risk-check", "version": "3.0.1" }
+  ],
+  "capability_invocations": [
+    {
+      "capability_id": "cap://nous-research/research-v2",
+      "version": "2.3.0",
+      "model": "claude-sonnet-4",
+      "task_id": "task://exec_001/001",
+      "input_hash": "sha256:...",
+      "output_ref": "event://store-001/event_045",
+      "cost": { "tokens": 45000, "api_calls": 12, "usd": 0.18 },
+      "latency_ms": 3200,
+      "review_result": { "passed": true, "score": 0.92 }
+    }
+  ],
+  "result": { "status": "completed", "summary": "..." },
+  "total_cost_usd": 0.42,
+  "total_latency_ms": 18500,
+  "completed_at": "2026-07-19T10:01:18Z"
+}
+```
+
+---
+
+### 3.12 Knowledge
+
+| Property | Value |
+|----------|-------|
+| Definition | World knowledge — documents, data, and facts that are shared across all executions. Read-only to AI, write-governed by humans |
+| Classification | Persistent Object |
+| Identity | `knowledge://<store>/<uuid>` |
+| State | Ingested → Indexed → Available → (Optionally) Superseded |
+| Owner | Data Plane (Memory Manager) |
+| Lifecycle | Ingested → Indexed → Queried → Updated via governance |
+
+---
+
+### 3.13 Memory
+
+| Property | Value |
+|----------|-------|
+| Definition | Running experience — private to an execution or session. Read-write, auto-accumulated, auto-expired |
+| Classification | Persistent Object |
+| Identity | `memory://<session_id>/<key>` |
+| State | Created → Accessed → (Optionally) Archived |
+| Owner | Data Plane (Memory Manager) |
+| Lifecycle | Written during execution → Retrieved when context matches → Expired |
+
+---
+
+### 3.14 Experience
+
+| Property | Value |
+|----------|-------|
+| Definition | Cross-session reusable patterns learned by the Loop subsystem. Used for optimization suggestions |
+| Classification | Persistent Object |
+| Identity | `exp://<loop_engine>/<uuid>` |
+| State | Discovered → Validated → Suggested → (Optionally) Incorporated |
+| Owner | Loop Manager (Learning Engine) |
+| Lifecycle | Discovered by Learning Engine → Validated by Evaluation Engine → Suggested via Rule Suggestion → (Optionally) Approved by Human → Incorporated |
+
+---
+
+## 4. Relationship Graph
+
+```
+                            ┌─────────────┐
+                            │    Goal     │
+                            └──────┬──────┘
+                                   │ resolves to
+                                   ▼
+                            ┌─────────────┐
+                            │   Intent    │
+                            └──────┬──────┘
+                                   │ selects
+                                   ▼
+                   ┌──────────────────────────────┐
+                   │          Workflow             │
+                   │  (contains Stage[ ] nodes)    │
+                   └──────┬───────────────────────┘
+                          │ compiled by
+                          ▼
+                   ┌──────────────────────────────┐
+                   │      Execution Plan           │
+                   │  (Workflow + Rules + Profile  │
+                   │   → compiled Execution Graph) │
+                   └──────┬───────────────────────┘
+                          │ instantiated by
+                          ▼
+                   ┌──────────────────────────────┐
+                   │         Execution             │
+                   │  (contains Task[ ] instances) │
+                   └──────┬───────────────────────┘
+                          │ each Task requires
+                          ▼
+              ┌──────────────────────────┐
+              │ Capability Requirement   │
+              └──────────┬───────────────┘
+                         │ resolved via
+                         ▼
+              ┌──────────────────────────┐
+              │ Capability Manifest      │
+              │ (found in Registry)      │
+              └──────────────────────────┘
+
+  Each Task state change ──── publishes ────► Event
+                                                  │
+                                                  ▼
+                                          ┌──────────────┐
+                                          │  Event Store  │────────► Execution Record
+                                          └──────────────┘
+
+  Workflow ── referenced by ──► Rule (constrains Task behavior)
+  Execution ── uses ──► Profile (configures Capability behavior)
+  Execution ── produces ──► Experience (learned by Loop)
+  Knowledge ──► Capability (consumed as input)
+  Memory ──► Capability (consumed as context)
+```
+
+---
+
+## 5. Identity Convention
+
+All Agent OS object identities follow a URI-like convention:
+
+```
+<scheme>://<namespace>/<path>@<version>
+```
+
+| Object | Scheme | Namespace | Path | Version |
+|--------|--------|-----------|------|---------|
+| Workflow | `wf` | Domain/org | Name | Semver |
+| Rule | `rule` | Domain/org | Name | Semver |
+| Profile | `profile` | Domain/org | Name | Semver |
+| Capability Manifest | `cap` | Provider | Name | Semver |
+| Task | `task` | Execution ID | Sequence | — |
+| Event | `event` | Store ID | UUID | — |
+| Execution | `exec` | Namespace | UUID | — |
+| Execution Record | `record` | Exec ID | — | — |
+| Knowledge | `knowledge` | Store ID | UUID | — |
+| Memory | `memory` | Session ID | Key | — |
+| Experience | `exp` | Loop Engine | UUID | — |
+
+**Rules:**
+- All IDs are case-sensitive
+- Namespaces are lowercase with hyphens
+- Versions follow Semantic Versioning (MAJOR.MINOR.PATCH)
+- Runtime Object IDs do not carry versions (versions are captured in Execution Record)
+
+---
+
+## 6. Ownership Matrix
+
+| Object | Classifies As | Owner Plane | Owner Module |
+|--------|---------------|-------------|--------------|
+| Goal | Definition (transient) | User Plane | — |
+| Intent | Definition (transient) | Control Plane | Intent Engine |
+| Workflow | Definition | Metadata Plane | Registry |
+| Task | Runtime | Control Plane | Execution Engine |
+| Rule | Definition | Metadata Plane | Rule Governance |
+| Profile | Definition | Metadata Plane | Registry |
+| Capability Manifest | Definition | Metadata Plane | Registry |
+| Event | Runtime | Infrastructure | Event Bus / Store |
+| Execution | Runtime | Control Plane | Execution Engine |
+| Execution Record | Persistent | Data Plane | Event Store |
+| Knowledge | Persistent | Data Plane | Memory Manager |
+| Memory | Persistent | Data Plane | Memory Manager |
+| Experience | Persistent | Data Plane | Loop Manager |
+
+---
+
+## 7. State Models Summary
+
+| Object | Has State? | State Machine |
+|--------|-----------|---------------|
+| Goal | Transient | Created → Resolved |
+| Intent | Transient | Created → Resolved |
+| Workflow | Yes | Draft → Published → Deprecated |
+| Task | Yes | Created → Queued → Assigned → Running → WaitingReview → Reviewed → Completed / Failed / Cancelled |
+| Rule | Yes | Draft → Review → Experiment → Approved → Superseded |
+| Profile | Yes | Draft → Published → Deprecated |
+| Capability Manifest | Yes | Registered → Active → Deprecated |
+| Event | Immutable | Published → (Stored) → (Replayed) |
+| Execution | Yes | Created → Running → Reviewing → Completed / Failed / Cancelled |
+| Execution Record | Append-only | Created → Archived |
+| Knowledge | Yes | Ingested → Indexed → Available → Superseded |
+| Memory | Yes | Created → Accessed → Archived |
+| Experience | Yes | Discovered → Validated → Suggested → Incorporated |
+
+---
+
+## 8. Serialization Conventions
+
+### 8.1 JSON
+
+- All serialized objects use JSON (RFC 8259) as the canonical format
+- Timestamps: ISO 8601 with UTC (suffix `Z`)
+- IDs: strings following the Identity Convention (§5)
+- Hashes: `sha256:<hex>` format
+- Version fields: semantic versioning strings (`MAJOR.MINOR.PATCH`)
+- Monetary amounts: USD as number (float)
+
+### 8.2 Event
+
+- Events are serialized as JSON and published to the Event Bus
+- Event Store stores events as append-only JSON records
+- Event type names follow PascalCase with colon separator for hierarchy: `Task:Completed`, `Execution:Failed`
+
+### 8.3 Storage
+
+- Long-term storage: Data Plane modules may use any backend (SQL, NoSQL, object storage)
+- Cross-module exchange always uses the JSON representations defined in this SPEC
+- Schema validation files live in `/schemas/` at the repository root
+
+---
+
+## 9. Reserved & Deprecated Terms
+
+The following terms are **not used** in Agent OS to avoid confusion:
+
+| Term | Reason | Replacement |
+|------|--------|-------------|
+| Agent | Overloaded; implies autonomous decision-making outside governance | Task, Capability, or Application |
+| Prompt | User-level concept; Kernel never handles prompts | Goal, Intent |
+| Plugin | Too generic; implies no contract | Capability (with Manifest) |
+| Skill | Ambiguous (could mean Workflow, Capability, or Rule) | Use specific term |
+| Tool | Reserved for low-level execution (browser, Python, terminal) | — |
+
+---
+
+## 10. Version History
+
+| Version | Date | Changes |
+|---------|------|---------|
+| 1.0 | 2026-07-19 | Initial specification |
