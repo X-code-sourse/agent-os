@@ -45,7 +45,7 @@ RFCs (Requests for Comments) define how specific modules and protocols are imple
 ### Infrastructure
 | ID | Title | Status |
 |----|-------|--------|
-| RFC-0500 | Event Backbone | — |
+| RFC-0500 | Event Backbone | Draft |
 | RFC-0501 | Observability | — |
 | RFC-0502 | Security | — |
 
