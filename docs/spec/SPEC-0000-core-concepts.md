@@ -415,7 +415,8 @@ Every object in Agent OS belongs to exactly one of four classifications:
 ```json
 {
   "execution_id": "exec://finance/550e8400-...",
-  "record_id": "record://exec://finance/550e8400-...",
+  "record_id": "record://finance/550e8400-e29b-41d4-a716-446655440000",
+  "execution_ref": "exec://finance/550e8400-e29b-41d4-a716-446655440000",
   "goal_hash": "sha256:...",
   "workflow": { "id": "wf://finance/stock-research", "version": "2.1.0" },
   "rules": [
@@ -480,6 +481,66 @@ Every object in Agent OS belongs to exactly one of four classifications:
 | State | Discovered → Validated → Suggested → (Optionally) Incorporated |
 | Owner | Loop Manager (Learning Engine) |
 | Lifecycle | Discovered by Learning Engine → Validated by Evaluation Engine → Suggested via Rule Suggestion → (Optionally) Approved by Human → Incorporated |
+
+### 3.15 Session
+
+| Property | Value |
+|----------|-------|
+| Definition | A user interaction context that groups one or related Goals and Executions. Provides resource isolation, Memory scoping, and continuity across multi-turn interactions |
+| Classification | Runtime Object |
+| Identity | `session://<namespace>/<uuid>` |
+| State | Created → Active → Expired |
+| Owner | Control Plane |
+| Lifecycle | Created when user starts interaction → Active while Goals are being resolved → Expired after idle timeout or explicit close |
+
+**Serialization:**
+```json
+{
+  "session_id": "session://finance/550e8400-...",
+  "user_id": "user://haihao",
+  "state": "active",
+  "created_at": "2026-07-19T10:00:00Z",
+  "last_active_at": "2026-07-19T10:15:00Z",
+  "execution_ids": ["exec://finance/..."],
+  "memory_scope": "session",
+  "idle_timeout_seconds": 900
+}
+```
+
+### 3.16 Execution Plan
+
+| Property | Value |
+|----------|-------|
+| Definition | The compiled output of the Planner — a frozen, executable DAG derived from a Workflow + Rules + Profile. Contains the minimally-viable set of stages, each bound to a specific Capability |
+| Classification | Definition Object (transient — produced by Planner, consumed by Execution Engine) |
+| Identity | `plan://<namespace>/<uuid>` |
+| State | Created → Activated → (Optionally) Superseded |
+| Owner | Control Plane (Planner) |
+| Lifecycle | Created by Planner compilation → Activated by Execution Engine → Superseded on Replan |
+
+**Serialization:**
+```json
+{
+  "plan_id": "plan://finance/550e8400-...",
+  "workflow_ref": "wf://finance/stock-research@2.1.0",
+  "execution_id": "exec://finance/...",
+  "compiled_at": "2026-07-19T10:00:02Z",
+  "stages": [
+    {
+      "stage_id": "company_identification",
+      "type": "task_node",
+      "depends_on": [],
+      "capability_binding": {
+        "capability_id": "cap://nous-research/research-v2@2.3.0",
+        "model": "claude-sonnet-4"
+      }
+    }
+  ],
+  "pruned_stages": ["financial_analysis", "valuation_analysis"],
+  "rules_applied": ["rule://finance/sec-filing@1.2.0"],
+  "profile_ref": "profile://finance/deep@1.0.0"
+}
+```
 
 ---
 
@@ -551,6 +612,8 @@ All Agent OS object identities follow a URI-like convention:
 
 | Object | Scheme | Namespace | Path | Version |
 |--------|--------|-----------|------|---------|
+| Session | `session` | Namespace | UUID | — |
+| Execution Plan | `plan` | Namespace | UUID | — |
 | Workflow | `wf` | Domain/org | Name | Semver |
 | Rule | `rule` | Domain/org | Name | Semver |
 | Profile | `profile` | Domain/org | Name | Semver |
@@ -558,7 +621,7 @@ All Agent OS object identities follow a URI-like convention:
 | Task | `task` | Execution ID | Sequence | — |
 | Event | `event` | Store ID | UUID | — |
 | Execution | `exec` | Namespace | UUID | — |
-| Execution Record | `record` | Exec ID | — | — |
+| Execution Record | `record` | Namespace | UUID | — |
 | Knowledge | `knowledge` | Store ID | UUID | — |
 | Memory | `memory` | Session ID | Key | — |
 | Experience | `exp` | Loop Engine | UUID | — |
@@ -577,6 +640,8 @@ All Agent OS object identities follow a URI-like convention:
 |--------|---------------|-------------|--------------|
 | Goal | Definition (transient) | User Plane | — |
 | Intent | Definition (transient) | Control Plane | Intent Engine |
+| Session | Runtime | Control Plane | Execution Engine |
+| Execution Plan | Definition (transient) | Control Plane | Planner |
 | Workflow | Definition | Metadata Plane | Registry |
 | Task | Runtime | Control Plane | Execution Engine |
 | Rule | Definition | Metadata Plane | Rule Governance |
@@ -597,8 +662,10 @@ All Agent OS object identities follow a URI-like convention:
 |--------|-----------|---------------|
 | Goal | Transient | Created → Resolved |
 | Intent | Transient | Created → Resolved |
+| Session | Yes | Created → Active → Expired |
+| Execution Plan | Transient | Created → Activated → Superseded |
 | Workflow | Yes | Draft → Published → Deprecated |
-| Task | Yes | Created → Queued → Assigned → Running → WaitingReview → Reviewed → Completed / Failed / Cancelled |
+| Task | Yes | Created → Queued → Assigned → Running → WaitingReview → Reviewed → Completed / CompletedWithWarning / Partial / Failed / Cancelled → Archived |
 | Rule | Yes | Draft → Review → Experiment → Approved → Superseded |
 | Profile | Yes | Draft → Published → Deprecated |
 | Capability Manifest | Yes | Registered → Active → Deprecated |

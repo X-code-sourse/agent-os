@@ -167,14 +167,19 @@ Conditions allow the Planner to **prune stages at compile time**, producing a Mi
 Conditions use a restricted expression language with no side effects:
 
 ```
-expression     ::= conjunction ( "||" conjunction )*
+expression     ::= conjunction ( "||" conjunction )* | "always" | "never"
 conjunction    ::= comparison ( "&&" comparison )*
-comparison     ::= path_expr operator value
+comparison     ::= path_expr operator value | "(" expression ")"
 path_expr      ::= identifier ( "." identifier )*
 operator       ::= "==" | "!=" | "in" | "not in" | ">" | "<" | ">=" | "<="
+               | "contains" | "starts_with"
 value          ::= string | number | boolean | "[" value ("," value)* "]"
 identifier     ::= [a-zA-Z_][a-zA-Z0-9_]*
 ```
+
+**Keywords:**
+- `"always"` — always evaluate to true; no expression parse needed (optimization hint)
+- `"never"` — always evaluate to false; stage is permanently pruned (for deprecation or debugging)
 
 ### 5.3 Available Context Variables
 

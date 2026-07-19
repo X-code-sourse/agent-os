@@ -35,35 +35,44 @@ Every Task in Agent OS exists in exactly one of the following states at any poin
 │                        TASK STATE MACHINE                           │
 │                                                                     │
 │  [Created] ──► [Queued] ──► [Assigned] ──► [Running]               │
-│                                                    │               │
-│                                                    ▼               │
-│                                           [WaitingReview]           │
-│                                                    │               │
-│                                               ┌────┴────┐          │
-│                                               │         │          │
-│                                               ▼         ▼          │
-│                                          [Reviewed]  [ReviewFailed]│
-│                                               │         │          │
-│                                          ┌────┴──┐     ├──────────┐│
-│                                          │       │     │          ││
-│                                          ▼       ▼     ▼          ▼│
-│                                    [Completed] [Completed     [Failed]
-│                                                  WithWarning]     │
-│                                                                   │
-│                          [PendingReview] ──► [PendingQueued]      │
 │                                                    │              │
-│                                                    ▼              │
-│                                                 [Queued]          │
-│                                                                   │
-│              [Failed] ──► [RetryQueued] ──► [Queued]              │
-│                                                                    │
-│              [Failed] ──► [ReplanRequested]                        │
-│                                                                    │
-│              [ReplanRequested] ──► [CancelQueued] ──► [Cancelled]  │
-│                                                                    │
-│              [Skipped]                            (terminal)       │
-│              [Cancelled]                          (terminal)       │
-│              [Archived]                           (terminal)       │
+│                                           ┌────────┴────────┐     │
+│                                           │                 │     │
+│                                           ▼                 ▼     │
+│                                    [WaitingReview]      [Failed]   │
+│                                           │                 │     │
+│                                   ┌───────┴───────┐   ┌───┴───┐  │
+│                                   │               │   │       │  │
+│                                   ▼               ▼   ▼       ▼  │
+│                              [Reviewed]    [PendingReview]  [Retry│
+│                                   │               │      Queued] │
+│                                   │               │       │     │
+│                              ┌────┴──┐            │       │     │
+│                              │       │            ▼       ▼     │
+│                              ▼       ▼       [Pending     [Queued]
+│                         [Completed] [Review Queued]             │
+│                              │     Failed]        │            │
+│                              │           │        │            │
+│                         ┌────┴──┐  ┌────┴──┐      │            │
+│                         │       │  │       │       │            │
+│                         ▼       ▼  ▼       ▼      │            │
+│                    [Completed] [Partial] [Failed] ─┤            │
+│                    [WithWarning]         │         │            │
+│                         │                ├── [RetryQueued]      │
+│                         │                └── [ReplanRequested]  │
+│                         │                              │        │
+│                         │                    ┌─────────┴──┐     │
+│                         │                    │            │     │
+│                         ▼                    ▼            ▼     │
+│                    [Archived]          [CancelQueued]  [Archived]│
+│                                              │                  │
+│                                              ▼                  │
+│                                        [Cancelled]              │
+│                                              │                  │
+│                                              ▼                  │
+│                                        [Archived]               │
+│                                                                  │
+│              [Skipped] ──► [Archived]                            │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -77,7 +86,8 @@ Every Task in Agent OS exists in exactly one of the following states at any poin
 | `Reviewed` | Local Reviewer has evaluated the output. Result pending routing. | No |
 | `ReviewFailed` | Local Reviewer determined output does not meet quality/constraint thresholds. | No |
 | `Completed` | Task executed successfully, passed Review, output is valid. | Yes |
-| `CompletedWithWarning` | Task executed, passed Review, but one or more non-critical warnings were raised. | Yes |
+| `CompletedWithWarning` | Task executed, passed Review, but one or more non-critical warnings were raised. | No (→ Archived) |
+| `Partial` | Task produced partial output before a non-critical interruption. Output carries `completeness` (0.0–1.0) and `usable_for[]`. | Yes |
 | `Failed` | Task terminated with an unrecoverable error. | No (until routed) |
 | `RetryQueued` | Task will be retried (up to `max_retries`). Re-enters the queue. | No |
 | `ReplanRequested` | The Execution Engine has determined that the DAG needs structural modification. Planner must generate a new Plan. | No |
@@ -85,7 +95,7 @@ Every Task in Agent OS exists in exactly one of the following states at any poin
 | `Cancelled` | Task was terminated before completion. Not a failure — intentional stop. | Yes |
 | `Skipped` | Task was never started because its condition evaluated to false at runtime (dynamic pruning). | Yes |
 | `Archived` | Task record retained for audit/replay. No further processing possible. | Yes |
-| `PendingReview` | Task output is being held for a dependency resolution (e.g., a predecessor failed and replanning follows). | No |
+| `PendingReview` | Task output is being held because a downstream dependency failed and replan resolution is pending. | No |
 | `PendingQueued` | Task released from PendingReview or dependency hold, returning to queue. | No |
 
 ### 3.2 Transitions (Formal Rules)
@@ -98,9 +108,11 @@ Each transition is defined by: `(current_state, trigger, preconditions) → next
 | T2 | Queued | Assigned | `Capability:NegotiationComplete` | Capability capacity available, Negotiation succeeded |
 | T3 | Assigned | Running | `Capability:Execute` | Capability accepted the invocation |
 | T4 | Running | WaitingReview | `Capability:OutputProduced` | Output conforms to Capability Contract schema |
+| T4.5 | Running | Partial | `Capability:PartialOutput` | Non-critical interruption; partial output available with `completeness` field |
 | T5 | Running | Failed | `Capability:Error` | Error is non-retryable (see §4) |
 | T6 | Running | Failed | `Capability:Timeout` | Execution exceeded `max_duration` for the Task |
 | T7 | WaitingReview | Reviewed | `Reviewer:EvaluationComplete` | Local Reviewer produced a result |
+| T7.5 | WaitingReview | PendingReview | `Dependency:Failed` | A downstream dependency failed; review result held pending replan decision |
 | T8 | Reviewed | Completed | `Reviewer:Result == pass` | All required constraints satisfied |
 | T9 | Reviewed | CompletedWithWarning | `Reviewer:Result == pass_with_warnings` | All required constraints satisfied, some warnings raised |
 | T10 | Reviewed | ReviewFailed | `Reviewer:Result == fail` | One or more required constraints violated |
@@ -112,8 +124,10 @@ Each transition is defined by: `(current_state, trigger, preconditions) → next
 | T16 | ReplanRequested | CancelQueued | `ExecutionEngine:issue_cancel` | All dependent Tasks in the same Execution must be cancelled |
 | T17 | ReplanRequested | Archived | `ExecutionEngine:archive_dag` | Entire DAG is being replaced by Planner; this Task is obsolete |
 | T18 | CancelQueued | Cancelled | `Capability:CancelAcknowledged` | Capability has stopped execution (or was never started) |
+| T18.5 | Partial | Archived | `Execution:Complete` | Execution has reached a terminal state |
 | T19 | RetryQueued | Queued | `ExecutionEngine:requeue` | Retry counter incremented, Task re-enters scheduling |
 | T20 | Completed | Archived | `Execution:Complete` | Execution has reached a terminal state |
+| T20.5 | CompletedWithWarning | Archived | `Execution:Complete` | Execution has reached a terminal state |
 | T21 | Cancelled | Archived | `Execution:Complete` | Execution has reached a terminal state |
 | T22 | Skipped | Archived | `Execution:Complete` | Execution has reached a terminal state |
 | T23 | WaitingReview | ReviewFailed | `Reviewer:Timeout` | Reviewer did not respond within configured deadline |
@@ -282,10 +296,12 @@ Every state transition MUST publish an Event. The Event Schema follows SPEC-0000
 | Event Type | Trigger | Key Payload Fields |
 |------------|---------|-------------------|
 | `Task:Created` | T1 | `task_id`, `execution_id`, `workflow_stage_id` |
-| `Task:Queued` | T1, T18 | `task_id`, `queue_position`, `estimated_delay_ms` |
+| `Task:Queued` | T1, T19 | `task_id`, `queue_position`, `estimated_delay_ms` |
 | `Task:Assigned` | T2 | `task_id`, `capability_id`, `capability_version` |
 | `Task:Running` | T3 | `task_id`, `capability_id`, `model_used` |
 | `Task:WaitingReview` | T4 | `task_id`, `output_summary`, `token_cost` |
+| `Task:PendingReview` | T7.5 | `task_id`, `reason`, `dependency_failed_id` |
+| `Task:Partial` | T4.5 | `task_id`, `completeness`, `usable_for[]`, `output_ref` |
 | `Task:Reviewed` | T7 | `task_id`, `result` (pass/fail/warning), `score`, `issues[]` |
 | `Task:ReviewFailed` | T10 | `task_id`, `violations[]`, `reviewer_id` |
 | `Task:Completed` | T8 | `task_id`, `output_ref`, `duration_ms`, `cost` |
@@ -296,7 +312,7 @@ Every state transition MUST publish an Event. The Event Schema follows SPEC-0000
 | `Task:CancelQueued` | T16, T24 | `task_id`, `reason` |
 | `Task:Cancelled` | T18 | `task_id`, `reason` |
 | `Task:Skipped` | T25 | `task_id`, `condition_expression`, `condition_result` |
-| `Task:Archived` | T20 | `task_id` |
+| `Task:Archived` | T20, T20.5, T18.5 | `task_id` |
 
 ### 6.2 Execution Events
 
@@ -472,7 +488,7 @@ The Execution Record is the single source of truth for replay, audit, and Loop a
 
 Any implementation claiming Agent OS compatibility **must**:
 
-1. Implement the Task state machine as defined in §3, including all 25+ transitions
+1. Implement the Task state machine as defined in §3, including all 30+ transitions
 2. Publish Events for every state transition as defined in §6
 3. Support all 7 result classifications (§4)
 4. Implement the retry policy engine as defined in §4.2
