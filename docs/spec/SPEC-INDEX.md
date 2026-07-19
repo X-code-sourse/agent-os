@@ -4,7 +4,7 @@ Core specifications define the Agent OS language, object model, and fundamental 
 
 | ID | Title | Status | Version |
 |----|-------|--------|---------|
-| SPEC-0000 | Core Concepts & Object Model | Draft | 1.0 |
+| SPEC-0000 | Core Concepts & Object Model | Proposed | 1.0 |
 
 ## Process
 

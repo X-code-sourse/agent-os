@@ -1,7 +1,7 @@
 # SPEC-0000: Core Concepts & Object Model
 
 **Version:** 1.0
-**Status:** Draft
+**Status:** Proposed
 **Type:** Foundation Specification
 **Supersedes:** Nothing
 

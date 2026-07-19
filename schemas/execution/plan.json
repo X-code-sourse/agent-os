@@ -1,0 +1,213 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/X-code-sourse/agent-os/schemas/execution/plan.json",
+  "title": "Execution Plan",
+  "description": "The compiled output of the Planner — a frozen, executable DAG derived from a Workflow + Rules + Profile. See RFC-0100 §10 and RFC-0101 §8.",
+  "type": "object",
+  "required": [
+    "plan_id",
+    "workflow_ref",
+    "execution_id",
+    "compiled_at",
+    "stages"
+  ],
+  "properties": {
+    "plan_id": {
+      "type": "string",
+      "pattern": "^plan://[a-zA-Z0-9_-]+/[a-f0-9-]+$",
+      "description": "Unique plan identifier. Format: plan://<namespace>/<uuid>"
+    },
+    "workflow_ref": {
+      "type": "string",
+      "pattern": "^wf://[a-zA-Z0-9_-]+/[a-zA-Z0-9_-]+@[0-9]+\\.[0-9]+\\.[0-9]+$",
+      "description": "Workflow reference with pinned version. Format: wf://<namespace>/<name>@<version>"
+    },
+    "execution_id": {
+      "type": "string",
+      "pattern": "^exec://[a-zA-Z0-9_-]+/[a-f0-9-]+$",
+      "description": "Execution identifier. Format: exec://<namespace>/<uuid>"
+    },
+    "profile_ref": {
+      "type": "string",
+      "pattern": "^profile://[a-zA-Z0-9_-]+/[a-zA-Z0-9_-]+@[0-9]+\\.[0-9]+\\.[0-9]+$",
+      "description": "Profile reference with pinned version"
+    },
+    "compiled_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 timestamp of plan compilation"
+    },
+    "stages": {
+      "type": "array",
+      "description": "Ordered list of stages in the pruned, bound execution graph",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/Stage"
+      }
+    },
+    "rules_applied": {
+      "type": "array",
+      "description": "Rules injected at compile time, each with pinned version",
+      "items": {
+        "type": "object",
+        "required": ["id", "version"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^rule://[a-zA-Z0-9_-]+/[a-zA-Z0-9_-]+$"
+          },
+          "version": {
+            "type": "string",
+            "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+          },
+          "scope": {
+            "type": "string",
+            "description": "Scope of rule application: 'global' or 'stage:<stage_id>'"
+          }
+        }
+      }
+    },
+    "pruning_log": {
+      "type": "object",
+      "description": "Records which stages were pruned at compile time and why",
+      "properties": {
+        "pruned": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Stage IDs that were pruned"
+        },
+        "reasons": {
+          "type": "object",
+          "description": "Map of stage_id to pruning reason",
+          "additionalProperties": { "type": "string" }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "Stage": {
+      "type": "object",
+      "required": [
+        "stage_id",
+        "type",
+        "depends_on",
+        "requirements"
+      ],
+      "properties": {
+        "stage_id": {
+          "type": "string",
+          "description": "Unique stage identifier within this plan"
+        },
+        "type": {
+          "type": "string",
+          "enum": ["task_node", "parallel_gate", "join_gate", "exclusive_gate", "inline_subworkflow"],
+          "description": "Stage type. Only task_node produces a Task; structural nodes (gates) are coordination points."
+        },
+        "depends_on": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Stage IDs this stage depends on. Empty array = root stage."
+        },
+        "requirements": {
+          "type": "object",
+          "required": ["capability_type", "domain", "language"],
+          "properties": {
+            "capability_type": {
+              "type": "string",
+              "description": "Broad capability type (research, python, browser, writing, ...)"
+            },
+            "domain": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "Required domain expertise"
+            },
+            "language": {
+              "type": "string",
+              "description": "BCP 47 language code"
+            },
+            "quality_min": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1,
+              "description": "Minimum acceptable quality score"
+            },
+            "cost_max": {
+              "type": "number",
+              "minimum": 0,
+              "description": "Maximum cost per invocation in USD"
+            },
+            "latency_max_ms": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Maximum acceptable latency in milliseconds"
+            },
+            "required_features": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "Required capability features"
+            }
+          }
+        },
+        "capability_binding": {
+          "type": "object",
+          "description": "Resolved capability binding (set by Planner Pass 6)",
+          "required": ["capability_id", "model"],
+          "properties": {
+            "capability_id": {
+              "type": "string",
+              "pattern": "^cap://[a-zA-Z0-9_-]+/[a-zA-Z0-9_-]+@[0-9]+\\.[0-9]+\\.[0-9]+$"
+            },
+            "model": {
+              "type": "string",
+              "description": "Bound model identifier"
+            },
+            "estimated_cost": {
+              "type": "number",
+              "description": "Estimated cost per invocation in USD"
+            },
+            "estimated_latency_ms": {
+              "type": "integer",
+              "description": "Estimated latency in milliseconds"
+            }
+          }
+        },
+        "input": {
+          "type": "object",
+          "description": "Stage input, with template variables resolved from context"
+        },
+        "config": {
+          "type": "object",
+          "description": "Stage-specific configuration (passed to capability as config)"
+        },
+        "max_retries": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 3,
+          "description": "Maximum number of automatic retry attempts"
+        },
+        "replan_allowed": {
+          "type": "boolean",
+          "default": false,
+          "description": "Whether the stage may trigger a replan on terminal failure"
+        },
+        "condition": {
+          "type": "string",
+          "description": "Condition expression that was evaluated at compile time (RFC-0100 §5)"
+        },
+        "optimization_hints": {
+          "type": "object",
+          "description": "Optimization metadata from Planner Pass 7",
+          "properties": {
+            "estimated_cost": { "type": "number" },
+            "estimated_latency_ms": { "type": "integer" },
+            "parallelizable_with": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "Stage IDs that may run in parallel with this one"
+            }
+          }
+        }
+      }
+    }
+  }
+}

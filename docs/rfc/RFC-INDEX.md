@@ -7,7 +7,7 @@ RFCs (Requests for Comments) define how specific modules and protocols are imple
 ### Foundation
 | ID | Title | Status |
 |----|-------|--------|
-| RFC-0001 | Execution Semantics | Draft |
+| RFC-0001 | Execution Semantics | Proposed |
 | RFC-0002 | Architectural Constitution (reference only) | Draft |
 
 ### Control Plane

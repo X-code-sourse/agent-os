@@ -1,6 +1,6 @@
 # RFC-0001: Execution Semantics
 
-**Status:** Draft
+**Status:** Proposed
 **Type:** Foundation RFC
 **RFC-INDEX:** Foundation / RFC-0001
 **Supersedes:** Nothing
