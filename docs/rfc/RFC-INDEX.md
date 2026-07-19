@@ -15,7 +15,7 @@ RFCs (Requests for Comments) define how specific modules and protocols are imple
 |----|-------|--------|
 | RFC-0100 | Workflow Specification | Draft |
 | RFC-0101 | Planner Architecture | Proposed |
-| RFC-0102 | Execution Engine | — |
+| RFC-0102 | Execution Engine | Draft |
 | RFC-0103 | State Machine | — |
 | RFC-0104 | Rule Resolution | — |
 
