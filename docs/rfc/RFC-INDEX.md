@@ -13,7 +13,7 @@ RFCs (Requests for Comments) define how specific modules and protocols are imple
 ### Control Plane
 | ID | Title | Status |
 |----|-------|--------|
-| RFC-0100 | Workflow Specification | — |
+| RFC-0100 | Workflow Specification | Draft |
 | RFC-0101 | Planner Architecture | — |
 | RFC-0102 | Execution Engine | — |
 | RFC-0103 | State Machine | — |
