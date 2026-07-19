@@ -24,7 +24,7 @@
 | 9 | Glossary (TERMS.md) | ✅ Done | 40+ terms |
 | 10 | Examples | ✅ Done | 1 Workflow, 1 Rule |
 
-**Milestone 0 completion criteria:** SPEC-0000 and RFC-0001 promoted to Proposed. (Current: SPEC-0000 promoted, RFC-0001 still Draft.)
+**Milestone 0 completion criteria:** SPEC-0000 and RFC-0001 promoted to Proposed. (Current: both Proposed — milestone criteria met.)
 
 ---
 
