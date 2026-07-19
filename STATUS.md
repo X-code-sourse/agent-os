@@ -33,7 +33,7 @@
 | ID | Title | Plane | Status | Referenced By | Promotion Criteria |
 |----|-------|-------|--------|---------------|--------------------|
 | SPEC-0000 | Core Concepts & Object Model | — | **Proposed** | All 14 RFCs, 2 ADRs | ✅ Complete — all S1 issues resolved |
-| RFC-0001 | Execution Semantics | Foundation | Draft | RFC-0101, RFC-0102, RFC-0200, RFC-0500, RFC-0600 | ⏳ Awaiting promotion |
+| RFC-0001 | Execution Semantics | Foundation | **Proposed** | All 14 RFCs, 2 ADRs | ✅ Complete — Phase 1-2 S1 resolved |
 | RFC-0002 | Constitutional Reference | Foundation | Draft | (Reference wrapper) | ✅ Wrapper — promotes with RFC-0001 |
 | RFC-0100 | Workflow Specification | Control | Draft | RFC-0101, RFC-0102, RFC-0201 | ⏳ Awaiting implementation validation |
 | RFC-0101 | Planner Architecture | Control | **Proposed** | RFC-0102 | ⏳ Awaiting implementation validation |
@@ -85,21 +85,21 @@
 
 ## Promotion Pipeline
 
-### Currently Proposed (1)
+### Currently Proposed (3)
 
 | RFC | Reason for Proposed Status | Next Step |
 |-----|---------------------------|-----------|
-| SPEC-0000 | Root of all references, all S1 issues resolved | Begin reference implementation |
-| RFC-0101 | All referenced by downstream RFCs, no unresolved issues | Await implementation validation |
+| SPEC-0000 | Root of all references, no unresolved issues | Begin reference implementation |
+| RFC-0001 | Foundation execution semantics, Phase 1-2 S1 resolved | Begin reference implementation |
+| RFC-0101 | Compiler pipeline fully defined, no unresolved issues | Await implementation validation |
 
 ### Next in Line for Promotion
 
 | RFC | Prerequisite | Condition |
 |-----|-------------|-----------|
-| RFC-0001 | SPEC-0000 → Proposed | ✅ Dependency met. Phase 1-2 S1 issues resolved. Ready. |
-| RFC-0100 | RFC-0001 → Proposed | Awaiting upstream stabilization |
+| RFC-0100 | SPEC-0000 + RFC-0001 → Proposed | ✅ Dependency met. Awaiting implementation validation. |
 | RFC-0102 | RFC-0100 + RFC-0101 → Proposed | Awaiting upstream stabilization |
-| RFC-0200 | RFC-0001 → Proposed | Awaiting upstream stabilization |
+| RFC-0200 | RFC-0001 → Proposed | ✅ Dependency met. Awaiting implementation validation. |
 
 ---
 
