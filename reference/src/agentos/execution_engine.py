@@ -169,6 +169,7 @@ class ExecutionEngine:
             "status": result.status,
             "total": len(result.task_results),
             "failed": len(failed),
+            "execution_result": result,
         })
 
         return result
