@@ -1,18 +1,39 @@
-"""
-Agent OS P1 — Core data models.
-
-All modules share these types. No external dependencies.
-"""
+"""Agent OS — Core data models."""
 
 from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from enum import Enum
 from typing import Any
 
 
-# ── Workflow Definition ────────────────────────────────────────────────
+# ── Task State Machine ─────────────────────────────────────────────
+
+class TaskState(str, Enum):
+    """Task states per RFC-0001 §3.1 — simplified 6-state path."""
+
+    CREATED = "created"
+    QUEUED = "queued"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    RETRY_QUEUED = "retry_queued"
+
+    def can_transition_to(self, target: TaskState) -> bool:
+        transitions = {
+            TaskState.CREATED:      {TaskState.QUEUED},
+            TaskState.QUEUED:       {TaskState.RUNNING},
+            TaskState.RUNNING:      {TaskState.COMPLETED, TaskState.FAILED},
+            TaskState.COMPLETED:    set(),
+            TaskState.FAILED:       {TaskState.RETRY_QUEUED},
+            TaskState.RETRY_QUEUED: {TaskState.QUEUED},
+        }
+        return target in transitions.get(self, set())
+
+
+# ── Workflow Definition ────────────────────────────────────────────
 
 @dataclass
 class Rule:
@@ -42,7 +63,7 @@ class Workflow:
     capabilities: dict[str, str] = field(default_factory=dict)
 
 
-# ── Plan ───────────────────────────────────────────────────────────────
+# ── Plan ───────────────────────────────────────────────────────────
 
 @dataclass
 class PlannedTask:
@@ -63,21 +84,44 @@ class Plan:
     workflow_id: str
     tasks: list[PlannedTask]
     rules_applied: list[str] = field(default_factory=list)
-    dag: dict[str, list[str]] = field(default_factory=dict)  # task_id → [dep_ids]
+    dag: dict[str, list[str]] = field(default_factory=dict)
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
 
-# ── Execution ──────────────────────────────────────────────────────────
+# ── State History ──────────────────────────────────────────────────
+
+@dataclass
+class StateTransition:
+    """A single state transition record."""
+    from_state: TaskState | None
+    to_state: TaskState
+    at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    reason: str = ""
+
+
+# ── Execution ──────────────────────────────────────────────────────
 
 @dataclass
 class TaskResult:
-    """Outcome of executing a single planned task."""
+    """Outcome of executing a single planned task, with state history."""
     task_id: str
-    status: str                                     # pending | running | completed | failed
+    status: str = TaskState.CREATED.value
     output: Any = None
     error: str | None = None
     started_at: datetime | None = None
     completed_at: datetime | None = None
+    state_history: list[StateTransition] = field(default_factory=list)
+
+    def transition_to(self, new_state: TaskState, reason: str = "") -> None:
+        current = TaskState(self.status)
+        if not current.can_transition_to(new_state):
+            raise ValueError(
+                f"Invalid transition: {current.value} → {new_state.value}"
+            )
+        self.state_history.append(StateTransition(
+            from_state=current, to_state=new_state, reason=reason
+        ))
+        self.status = new_state.value
 
 
 @dataclass
@@ -85,12 +129,12 @@ class ExecutionResult:
     """Aggregate result of executing a complete Plan."""
     workflow_id: str
     task_results: dict[str, TaskResult] = field(default_factory=dict)
-    status: str = "pending"                         # pending | running | completed | partial | failed
+    status: str = "pending"
     started_at: datetime | None = None
     completed_at: datetime | None = None
 
 
-# ── Review ─────────────────────────────────────────────────────────────
+# ── Review ─────────────────────────────────────────────────────────
 
 @dataclass
 class ReviewCheck:
@@ -109,13 +153,17 @@ class ReviewVerdict:
     summary: str = ""
 
 
-# ── Events ─────────────────────────────────────────────────────────────
+# ── Events (legacy — used by P1 EventBus) ──────────────────────────
 
 @dataclass
 class Event:
-    """Message published on the Event Bus."""
+    """Legacy P1 Event — used by event_bus.EventBus.
+    
+    Deprecated in favour of backbone.event.Event (RFC-0500 compliant).
+    Kept for backward compatibility with existing subscribers.
+    """
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
-    type: str = ""               # workflow.loaded | plan.ready | task.started | ...
+    type: str = ""
     source: str = ""
     data: dict[str, Any] = field(default_factory=dict)
     timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))

@@ -208,12 +208,12 @@ def _cmd_run(args: argparse.Namespace) -> int:
 
     engine = ExecutionEngine(bus=bus)
 
-    # Register built-in executors
-    engine.executor.register("search", _exec_search)
-    engine.executor.register("llm", _exec_llm)
-    engine.executor.register("gather", _exec_review)
-    engine.executor.register("review", _exec_review)
-    engine.executor.register("report", _exec_report)
+    # Register built-in executors via Capability Pool
+    engine.pool.register("search", _exec_search)
+    engine.pool.register("llm", _exec_llm)
+    engine.pool.register("gather", _exec_review)
+    engine.pool.register("review", _exec_review)
+    engine.pool.register("report", _exec_report)
 
     # ── Load workflow ──────────────────────────────────────────────
     path = Path(wf_id)
