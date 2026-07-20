@@ -42,13 +42,14 @@ class CapabilityPool:
     v1: synchronous, in-process, no queueing.
     """
 
-    def __init__(self) -> None:
-        self._registry: dict[str, Callable] = {}
+    def __init__(self, registry: "AgentOSRegistry | None" = None) -> None:
+        self._registry_dict: dict[str, Callable] = {}
         self._invocations: dict[str, InvocationResult] = {}
+        self._manifest_registry = registry
 
     def register(self, task_type: str, fn: Callable) -> None:
         """Register a callable for a task type."""
-        self._registry[task_type] = fn
+        self._registry_dict[task_type] = fn
         logger.debug("Pool: registered type=%s", task_type)
 
     def invoke(
@@ -57,7 +58,16 @@ class CapabilityPool:
         context: dict[str, Any],
     ) -> InvocationResult:
         """Invoke a capability. Returns structured result."""
-        fn = self._registry.get(task.type)
+        fn = None
+        # Check direct dict first, then manifest registry
+        if task.type in self._registry_dict:
+            fn = self._registry_dict[task.type]
+        elif self._manifest_registry:
+            manifest = self._manifest_registry.resolve_capability(task.type)
+            if manifest and manifest.fn:
+                fn = manifest.fn
+                # Cache for future calls
+                self._registry_dict[task.type] = fn
         if fn is None:
             return InvocationResult(
                 status="error",

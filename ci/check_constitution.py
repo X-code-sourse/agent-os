@@ -41,10 +41,13 @@ ck(TaskState.FAILED.can_transition_to(TaskState.RETRY_QUEUED), "A3: FAILED->RETR
 tr = TaskResult("t1")
 tr.state_history.append(StateTransition(from_state=None, to_state=TaskState.CREATED))
 tr.transition_to(TaskState.QUEUED, "a")
-tr.transition_to(TaskState.RUNNING, "b")
-tr.transition_to(TaskState.COMPLETED, "c")
+tr.transition_to(TaskState.ASSIGNED, "b")
+tr.transition_to(TaskState.RUNNING, "c")
+tr.transition_to(TaskState.WAITING_REVIEW, "d")
+tr.transition_to(TaskState.REVIEWED, "e")
+tr.transition_to(TaskState.COMPLETED, "f")
 ck(tr.status == "completed",                "A3: transition chain ends at completed")
-ck(len(tr.state_history) == 4,              "A3: state_history tracks all transitions")
+ck(len(tr.state_history) == 7,              "A3: state_history tracks all transitions")
 
 try:
     tr.transition_to(TaskState.RUNNING, "invalid")

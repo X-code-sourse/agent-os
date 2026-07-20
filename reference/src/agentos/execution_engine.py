@@ -43,9 +43,10 @@ EXECUTION_FAILED = "Execution:Failed"
 class ExecutionEngine:
     """Schedules and executes a Plan's DAG (RFC-0102)."""
 
-    def __init__(self, bus: EventBus | None = None) -> None:
+    def __init__(self, bus: EventBus | None = None,
+                 registry: "AgentOSRegistry | None" = None) -> None:
         self.bus = bus
-        self.pool = CapabilityPool()
+        self.pool = CapabilityPool(registry=registry)
 
     # ── Plan ingestion (RFC-0102 §4) ───────────────────────────────
 
