@@ -43,16 +43,16 @@ jobs:
 
       - name: E2E run
         run: |
-          python -m agentos.cli run stock_research --query "test ci" --json > /tmp/e2e.json
-          python ../ci/check_e2e.py
+          python -m agentos.cli run stock_research --query "test ci" --json > "${{ runner.temp }}/e2e.json"
+          python "${{ github.workspace }}/ci/check_e2e.py"
 
       - name: Validate schemas
-        run: python ../ci/check_schemas.py
+        run: python "${{ github.workspace }}/ci/check_schemas.py"
 
       - name: Import check
-        run: python ../ci/check_imports.py
+        run: python "${{ github.workspace }}/ci/check_imports.py"
 
       - name: Workflow plan
         run: |
-          python -m agentos.cli workflow plan stock_research --query "test ci" --json > /tmp/plan.json
-          python -c "import json; d=json.load(open('/tmp/plan.json')); assert len(d['stages'])>0; print(f'Plan OK: {len(d[\"stages\"])} stages')"
+          python -m agentos.cli workflow plan stock_research --query "test ci" --json > "${{ runner.temp }}/plan.json"
+          python -c "import json; d=json.load(open('${{ runner.temp }}/plan.json')); assert len(d['stages'])>0; print(f'Plan OK: {len(d[\"stages\"])} stages')"
