@@ -1,0 +1,54 @@
+id: stock_research
+name: Stock Research Workflow
+description: Multi-dimensional analysis of a specified stock and generation of a research brief
+
+rules:
+  - max_tasks: 10
+  - timeout_seconds: 120
+
+tasks:
+  - id: search_news
+    type: search
+    params:
+      query: "{query} latest news 2025"
+      sources: [web, news]
+      limit: 5
+    depends_on: []
+
+  - id: search_financials
+    type: search
+    params:
+      query: "{query} financial data revenue profit"
+      sources: [web]
+      limit: 3
+    depends_on: []
+
+  - id: llm_analysis
+    type: llm
+    params:
+      prompt: |
+        Analyze {query} based on the following information:
+
+        News data: {search_news.output}
+
+        Financial data: {search_financials.output}
+
+        Please provide:
+        1) Investment highlights
+        2) Risk factors
+        3) Overall assessment
+    depends_on: [search_news, search_financials]
+
+  - id: review_result
+    type: review
+    params:
+      checks: [non_empty, min_length]
+    depends_on: [llm_analysis]
+
+  - id: generate_report
+    type: report
+    params:
+      sections:
+        - title: "📊 {query} Research Report"
+          content: "{llm_analysis.output}"
+    depends_on: [review_result]

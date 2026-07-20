@@ -1,0 +1,47 @@
+id: competitor_analysis
+name: Competitor Analysis Workflow
+description: Analyze the competitive landscape for a specified industry or company
+
+rules:
+  - max_tasks: 8
+  - timeout_seconds: 180
+
+tasks:
+  - id: search_market
+    type: search
+    params:
+      query: "{query} market share competitive landscape"
+      limit: 5
+    depends_on: []
+
+  - id: search_competitors
+    type: search
+    params:
+      query: "{query} main competitors ranking"
+      limit: 5
+    depends_on: []
+
+  - id: llm_competitor_analysis
+    type: llm
+    params:
+      prompt: |
+        Analyze the competitive landscape of {query} based on the following information:
+
+        Market data: {search_market.output}
+
+        Competitor data: {search_competitors.output}
+
+        Please provide:
+        1) Market overview
+        2) Key players
+        3) Competitive advantages and disadvantages
+        4) Future trend predictions
+    depends_on: [search_market, search_competitors]
+
+  - id: final_report
+    type: report
+    params:
+      sections:
+        - title: "🏢 {query} Competitive Analysis Report"
+          content: "{llm_competitor_analysis.output}"
+    depends_on: [llm_competitor_analysis]

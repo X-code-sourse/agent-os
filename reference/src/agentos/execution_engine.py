@@ -8,11 +8,12 @@ through the Event Bus, and invokes capabilities through the Capability Pool.
 from __future__ import annotations
 
 import logging
+import threading
 from collections import deque
 from datetime import datetime, timezone
 from typing import Any
 
-from .capability_pool import CapabilityPool
+from .capability_pool import CapabilityPool, InvocationResult
 from .backbone.bus import EventBus
 from .models import (
     ExecutionResult,
@@ -120,8 +121,9 @@ class ExecutionEngine:
                     "type": task.type,
                 })
 
-                # Execute via Capability Pool (RFC-0200 §5)
-                inv_result = self.pool.invoke(task, {**ctx, **outputs})
+                # Execute via Capability Pool (RFC-0200 §5) with timeout
+                timeout = max(task.timeout, 1)
+                inv_result = self._invoke_with_timeout(task, {**ctx, **outputs}, timeout)
 
                 if inv_result.status == "success":
                     tr.transition_to(TaskState.WAITING_REVIEW, "capability_output_produced")
@@ -176,6 +178,54 @@ class ExecutionEngine:
         })
 
         return result
+
+    # ── Timeout-safe invocation ──────────────────────────────────────
+
+    def _invoke_with_timeout(
+        self,
+        task: PlannedTask,
+        context: dict[str, Any],
+        timeout_sec: int,
+    ) -> InvocationResult:
+        """Invoke a capability with timeout protection via threading.
+
+        Spawns a daemon thread for the synchronous pool.invoke() call and
+        waits up to *timeout_sec* seconds. If the thread is still alive
+        after that window, returns an error InvocationResult with
+        error_code='timeout'.
+        """
+        result_box: list[InvocationResult] = []
+        exception_box: list[BaseException] = []
+
+        pool = self.pool
+
+        def _run() -> None:
+            try:
+                result_box.append(pool.invoke(task, context))
+            except BaseException as exc:
+                exception_box.append(exc)
+
+        thread = threading.Thread(target=_run, daemon=True)
+        thread.start()
+        thread.join(timeout_sec)
+
+        if thread.is_alive():
+            logger.warning(
+                "Task %s timed out after %ds (configured timeout=%d)",
+                task.id, timeout_sec, task.timeout,
+            )
+            return InvocationResult(
+                status="error",
+                error=f"Task execution timed out after {timeout_sec} seconds",
+                error_code="timeout",
+            )
+
+        if exception_box:
+            raise RuntimeError(
+                f"Task {task.id} invoke failed internally"
+            ) from exception_box[0]
+
+        return result_box[0]
 
     # ── Event publishing ────────────────────────────────────────────
 
