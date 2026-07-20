@@ -23,6 +23,7 @@
 | 8 | Repository structure | ✅ Done | All directories populated with .gitkeep |
 | 9 | Glossary (TERMS.md) | ✅ Done | 40+ terms |
 | 10 | Examples | ✅ Done | 1 Workflow, 1 Rule |
+| 11 | CI Pipeline | ✅ Done | GitHub Actions: validate workflows, E2E, schema checks |
 
 **Milestone 0 completion criteria:** SPEC-0000 and RFC-0001 promoted to Proposed. (Current: both Proposed — milestone criteria met.)
 
@@ -97,9 +98,9 @@
 
 | RFC | Prerequisite | Condition |
 |-----|-------------|-----------|
-| RFC-0100 | SPEC-0000 + RFC-0001 → Proposed | ✅ Dependency met. Awaiting implementation validation. |
+| RFC-0100 | SPEC-0000 + RFC-0001 → Proposed | ✅ Dependency met. CI pipeline active. Awaiting implementation validation. |
 | RFC-0102 | RFC-0100 + RFC-0101 → Proposed | Awaiting upstream stabilization |
-| RFC-0200 | RFC-0001 → Proposed | ✅ Dependency met. Awaiting implementation validation. |
+| RFC-0200 | RFC-0001 → Proposed | ✅ Dependency met. CI pipeline active. Awaiting implementation validation. |
 
 ---
 

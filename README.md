@@ -59,9 +59,11 @@ graph TB
 
 ## Project Status
 
+[![CI](https://github.com/X-code-sourse/agent-os/actions/workflows/ci.yml/badge.svg)](https://github.com/X-code-sourse/agent-os/actions/workflows/ci.yml)
+
 **Milestone 0 — Foundation Specification** (complete)
 
-The project is in specification-driven development. No runtime code yet.
+The project is in specification-driven development. See [reference/](reference/) for the P1 runtime implementation.
 
 ## Documentation
 
