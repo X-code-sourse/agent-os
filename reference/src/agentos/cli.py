@@ -17,10 +17,11 @@ from pathlib import Path
 from typing import Any
 
 from . import __version__
-from .event_bus import EventBus
+from .backbone.bus import EventBus
 from .execution_engine import ExecutionEngine
 from .llm_executor import LlmConfig, call_llm
-from .models import Event, Plan, PlannedTask
+from .backbone.event import Event
+from .models import Plan, PlannedTask
 from .planner import plan as do_plan
 from .reporter import format_report
 from .reviewer import review as do_review
@@ -249,8 +250,8 @@ def _cmd_run(args: argparse.Namespace) -> int:
     # no dual-path risk (Constitution Article 4).
     _results: list[tuple] = []
 
-    def _on_completed(event: Event) -> None:
-        edata = event.data
+    def _on_completed(event) -> None:
+        edata = event.payload
         er: ExecutionResult | None = edata.get("execution_result")
         if not er:
             return

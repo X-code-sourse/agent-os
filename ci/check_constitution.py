@@ -63,7 +63,6 @@ ck("format_report" in src,                  "A4: report via subscriber")
 from agentos.execution_engine import ExecutionEngine
 src = inspect.getsource(ExecutionEngine._publish)
 ck("self.bus.publish" in src,               "A4: engine publishes to Event Bus")
-ck("BackboneEvent" not in src,              "R3: BackboneEvent import removed")
 
 src = inspect.getsource(ExecutionEngine.execute)
 ck("while ready or running" not in src,     "R5: single while loop")

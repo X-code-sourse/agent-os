@@ -11,8 +11,8 @@ from typing import Any
 
 import yaml
 
-from .event_bus import EventBus
-from .models import Event, Rule, TaskDef, Workflow
+from .backbone.bus import EventBus
+from .models import Rule, TaskDef, Workflow
 
 WORKFLOW_DIRS = [
     Path.cwd() / "workflows",
@@ -117,9 +117,11 @@ def _load_from_path(path: Path, bus: EventBus | None = None) -> Workflow:
     )
 
     if bus:
-        bus.publish(
-            Event(type="workflow.loaded", source="workflow_loader",
-                  data={"workflow_id": wf.id, "task_count": len(tasks)})
-        )
+        from .backbone.event import Event
+        bus.publish(Event.new(
+            event_type="workflow.loaded",
+            payload={"workflow_id": wf.id, "task_count": len(tasks)},
+            source={"module": "workflow_loader", "instance_id": ""},
+        ))
 
     return wf

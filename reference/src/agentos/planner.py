@@ -15,8 +15,8 @@ from collections import deque
 from collections.abc import Iterable
 from typing import Any
 
-from .event_bus import EventBus
-from .models import Event, Plan, PlannedTask, Rule, TaskDef, Workflow
+from .backbone.bus import EventBus
+from .models import Plan, PlannedTask, Rule, TaskDef, Workflow
 
 
 class PlanningError(Exception):
@@ -90,14 +90,16 @@ def plan(
     )
 
     if bus:
-        bus.publish(
-            Event(type="plan.ready", source="planner",
-                  data={
-                      "workflow_id": workflow.id,
-                      "task_count": len(sorted_planned),
-                      "dag": dag,
-                  })
-        )
+        from .backbone.event import Event
+        bus.publish(Event.new(
+            event_type="plan.ready",
+            payload={
+                "workflow_id": workflow.id,
+                "task_count": len(sorted_planned),
+                "dag": dag,
+            },
+            source={"module": "planner", "instance_id": ""},
+        ))
 
     return plan
 

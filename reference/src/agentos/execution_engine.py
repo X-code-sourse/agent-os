@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from .capability_pool import CapabilityPool
-from .event_bus import EventBus
+from .backbone.bus import EventBus
 from .models import (
     ExecutionResult,
     Plan,
@@ -179,9 +179,10 @@ class ExecutionEngine:
         """Publish an event through the Event Bus (legacy P1 Event)."""
         if not self.bus:
             return
-        from .models import Event as LegacyEvent
-        self.bus.publish(LegacyEvent(
-            type=event_type,
-            source="execution_engine",
-            data=payload,
-        ))
+        from .backbone.event import Event as BackboneEvent
+        event = BackboneEvent.new(
+            event_type=event_type,
+            payload=payload,
+            source={"module": "execution_engine", "instance_id": ""},
+        )
+        self.bus.publish(event)

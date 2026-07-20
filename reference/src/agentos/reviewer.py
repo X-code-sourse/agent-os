@@ -9,8 +9,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from .event_bus import EventBus
-from .models import Event, ExecutionResult, ReviewCheck, ReviewVerdict
+from .backbone.bus import EventBus
+from .models import ExecutionResult, ReviewCheck, ReviewVerdict
 
 
 def review(
@@ -65,14 +65,15 @@ def review(
     )
 
     if bus:
-        bus.publish(Event(
-            type="Review:Passed" if passed else "Review:Failed",
-            source="reviewer",
-            data={
+        from .backbone.event import Event
+        bus.publish(Event.new(
+            event_type="Review:Passed" if passed else "Review:Failed",
+            payload={
                 "workflow_id": execution_result.workflow_id,
                 "passed": passed,
                 "check_count": len(checks),
-            }
+            },
+            source={"module": "reviewer", "instance_id": ""},
         ))
 
     return verdict
