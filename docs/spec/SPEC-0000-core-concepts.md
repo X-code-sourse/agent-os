@@ -722,3 +722,97 @@ The following terms are **not used** in Agent OS to avoid confusion:
 | Version | Date | Changes |
 |---------|------|---------|
 | 1.0 | 2026-07-19 | Initial specification |
+| 1.1 | 2026-07-20 | Added §11 Error Code Directory — 6 namespaces, 37 codes |
+
+## 11. Error Code Directory
+
+Every error in Agent OS carries a structured error code from one of six namespaces. Codes are **stable** — once assigned, a code is never repurposed or removed (deprecated codes are retired in the registry but remain reserved).
+
+### 11.1 Error Envelope
+
+```json
+{
+  "code": "PLAN_ERR_004",
+  "severity": "fatal",
+  "message": "No capability matches requirements for stage '{stage_id}'",
+  "detail": "type=research, domain=[finance, sec_filing], quality_min=0.85",
+  "suggested_action": "Lower quality_min, remove sec_filing domain, or register a matching capability",
+  "source": { "module": "planner", "stage_id": "financial_analysis" }
+}
+```
+
+### 11.2 WF_ERR — Workflow Validation
+
+| Code | Severity | Message | Suggested Action |
+|------|----------|---------|-----------------|
+| WF_ERR_001 | fatal | Workflow '{workflow_id}' has a cyclic dependency at stage '{stage_id}' | Break the cycle in depends_on |
+| WF_ERR_002 | fatal | Workflow '{workflow_id}' references unknown stage '{stage_id}' in depends_on | Add the missing stage definition or fix the reference |
+| WF_ERR_003 | fatal | Stage '{stage_id}' has no root ancestor (unreachable) | Ensure the stage is reachable from at least one root stage |
+| WF_ERR_004 | error | Stage '{stage_id}' has no capability_type in requirements | Add capability_type field |
+| WF_ERR_005 | warning | Stage '{stage_id}' condition expression '{expr}' failed to parse | Valid operators: ==, !=, in, not in, >, <, >=, <=, contains, starts_with |
+| WF_ERR_006 | warning | Stage '{stage_id}' condition '{expr}' references unknown variable '{var}' | Available: user_intent.*, input.* |
+
+### 11.3 MAN_ERR — Manifest Registration
+
+| Code | Severity | Message | Suggested Action |
+|------|----------|---------|-----------------|
+| MAN_ERR_001 | fatal | Manifest '{manifest_id}@{version}' is already registered | Bump the version or use a different manifest_id |
+| MAN_ERR_002 | fatal | Manifest '{manifest_id}' input_schema is invalid JSON Schema | Validate against draft 2020-12 |
+| MAN_ERR_003 | fatal | Manifest '{manifest_id}' output_schema is invalid JSON Schema | Validate against draft 2020-12 |
+| MAN_ERR_004 | error | Manifest '{manifest_id}' does not declare required error codes {missing} | At minimum declare: timeout, invalid_input, internal_error |
+| MAN_ERR_005 | warning | Manifest '{manifest_id}' quality_score {actual} exceeds 1.0 or is below 0.0 | Set quality_score in [0.0, 1.0] |
+| MAN_ERR_006 | warning | Manifest '{manifest_id}' references unknown model '{model}' in required_environment.models | Register the model first or fix the model ID |
+
+### 11.4 PLAN_ERR — Planner Compilation
+
+| Code | Severity | Message | Suggested Action |
+|------|----------|---------|-----------------|
+| PLAN_ERR_001 | fatal | Workflow YAML parsing failed at line {line}: {detail} | Fix the YAML syntax error |
+| PLAN_ERR_002 | fatal | Workflow '{workflow_id}' has no stages with empty depends_on | At least one root stage is required |
+| PLAN_ERR_003 | fatal | No Workflow found for ref '{workflow_ref}' | Check workflow_id spelling or register the workflow |
+| PLAN_ERR_004 | fatal | No capability matches requirements for stage '{stage_id}' | Lower quality_min, broaden domain, or register a matching capability |
+| PLAN_ERR_005 | error | Capability Negotiation failed: no Registry response after {timeout}ms | Check Registry availability |
+| PLAN_ERR_006 | error | Profile '{profile_ref}' not found | Register the profile or fix the reference |
+| PLAN_ERR_007 | warning | Budget warning: estimated cost {estimated} exceeds Profile cap {limit}' | Reduce stage count, lower quality_min, or raise budget |
+
+### 11.5 CAP_ERR — Capability Invocation
+
+| Code | Severity | Retryable | Message | Suggested Action |
+|------|----------|-----------|---------|-----------------|
+| CAP_ERR_001 | error | yes | Capability '{cap_id}' timed out after {timeout}ms | Retry with backoff; increase deadline if persistent |
+| CAP_ERR_002 | error | yes | Rate limit exceeded for capability '{cap_id}'; retry after {retry_after_ms}ms | Wait before retrying |
+| CAP_ERR_003 | error | yes | Capability '{cap_id}' returned transient error: {detail} | Retry with exponential backoff |
+| CAP_ERR_004 | error | yes | Model '{model}' unavailable for capability '{cap_id}' | Retry; may trigger Capability Negotiation rebind |
+| CAP_ERR_005 | fatal | no | Invalid input for capability '{cap_id}': {detail}' | Fix the Workflow's input_template or stage requirements |
+| CAP_ERR_006 | fatal | no | Authentication failed for capability '{cap_id}' | Check API keys in Security Manager configuration |
+| CAP_ERR_007 | fatal | no | Capability '{cap_id}' does not support required feature '{feature}' | Use a different capability or remove the feature requirement |
+| CAP_ERR_008 | error | no | Invocation cancelled: {reason} | Normal cancellation path; no action needed |
+
+### 11.6 POOL_ERR — Pool Scheduling
+
+| Code | Severity | Message | Suggested Action |
+|------|----------|---------|-----------------|
+| POOL_ERR_001 | error | Capability '{cap_id}' queue is full (limit: {limit}) | Retry after {retry_after_ms}ms; consider a different capability |
+| POOL_ERR_002 | warning | All instances of capability '{cap_id}' are unhealthy | Check instance health; may trigger automatic replacement |
+| POOL_ERR_003 | error | Rate limit exceeded for capability '{cap_id}' at pool level | Reduce dispatch rate or increase pool capacity |
+| POOL_ERR_004 | warning | Instance '{instance_id}' heartbeat missed ({missed_count} consecutive) | Instance may be unhealthy; replacement in progress |
+
+### 11.7 SYS_ERR — System-Level
+
+| Code | Severity | Message | Suggested Action |
+|------|----------|---------|-----------------|
+| SYS_ERR_001 | fatal | Event Store connection failed: {detail} | Check Event Store availability |
+| SYS_ERR_002 | fatal | Event type '{event_type}' version {version} is not registered in Schema Registry | Register the event type before publishing |
+| SYS_ERR_003 | error | Event '{event_id}' failed schema validation: {detail} | Fix the event payload to match the registered schema |
+| SYS_ERR_004 | fatal | Event signature verification failed for event '{event_id}' | Possible tampering; investigate immediately |
+| SYS_ERR_005 | error | Registry object '{object_id}' not found | Check object_id spelling and status (may be deprecated) |
+| SYS_ERR_006 | error | Authorization denied: principal '{principal}' may not perform '{action}' on '{resource}' | Check security policy configuration |
+| SYS_ERR_007 | warning | Key '{key_id}' expires in {days} days | Rotate key before expiry |
+
+### 11.8 Code Assignment Rules
+
+1. **Codes are permanent.** Once assigned, a code is never deleted. If a code becomes obsolete, it is marked `retired` in the registry but remains reserved.
+2. **New codes are assigned sequentially** within their namespace. Do not reuse retired codes.
+3. **Every module publishes the error codes it may emit** in its defining RFC. Consumers use this list for error handling.
+4. **Severity levels:** `fatal` (execution cannot proceed), `error` (execution fails but system continues), `warning` (execution continues with degraded state).
+5. **Capability authors** must use CAP_ERR codes from §11.5. Custom codes not in this table are mapped to `CAP_ERR_003` (transient) or `CAP_ERR_007` (unsupported) at the Pool boundary.
