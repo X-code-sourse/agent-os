@@ -52,6 +52,9 @@ jobs:
       - name: Import check
         run: python "${{ github.workspace }}/ci/check_imports.py"
 
+      - name: Constitution check
+        run: python ../ci/check_constitution.py
+
       - name: Workflow plan
         run: |
           python -m agentos.cli workflow plan stock_research --query "test ci" --json > "${{ runner.temp }}/plan.json"
