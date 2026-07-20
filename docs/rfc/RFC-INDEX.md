@@ -42,6 +42,11 @@ RFCs (Requests for Comments) define how specific modules and protocols are imple
 | RFC-0402 | Event Store | — |
 | RFC-0403 | Execution Record | — |
 
+### Interface
+| ID | Title | Status |
+|----|-------|--------|
+| RFC-0700 | CLI & Quickstart Specification | Draft |
+
 ### Infrastructure
 | ID | Title | Status |
 |----|-------|--------|
