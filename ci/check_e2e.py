@@ -1,7 +1,8 @@
 """E2E verification: validate run --json output."""
-import json, sys
+import json, sys, os
 
-with open("/tmp/e2e.json") as f:
+path = os.path.join(os.environ.get("RUNNER_TEMP", "/tmp"), "e2e.json")
+with open(path) as f:
     d = json.load(f)
 
 assert d["execution"]["status"] == "completed", f"status: {d['execution']['status']}"
