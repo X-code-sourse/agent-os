@@ -66,7 +66,7 @@ def review(
 
     if bus:
         bus.publish(Event(
-            type="review.passed" if passed else "review.failed",
+            type="Review:Passed" if passed else "Review:Failed",
             source="reviewer",
             data={
                 "workflow_id": execution_result.workflow_id,

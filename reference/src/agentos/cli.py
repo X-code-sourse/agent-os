@@ -16,8 +16,6 @@ import sys
 from pathlib import Path
 from typing import Any
 
-logger = logging.getLogger(__name__)
-
 from . import __version__
 from .event_bus import EventBus
 from .execution_engine import ExecutionEngine
@@ -244,39 +242,13 @@ def _cmd_run(args: argparse.Namespace) -> int:
         for t in plan.tasks:
             print(f"    {t.id:20s}  type={t.type:10s}  deps={t.depends_on}", file=sys.stderr)
 
-    # ── Execute via Event Bus ───────────────────────────────────────
-    # RFC-0102 §3: Engine publishes events, subscribers handle review + report
+    # ── Execute ─────────────────────────────────────────────────────
+    # Review + report run directly after execution instead of
+    # via event-bus subscriber, eliminating the subscriber+fallback
+    # dual-path race that would cause duplicate review/report calls
+    # if the bus were ever made asynchronous.
     if verbose:
         print(f"  Executing...", file=sys.stderr)
-
-    # Channel: subscriber → main thread
-    _results: list[tuple] = []
-
-    def _on_execution_completed(event: Event) -> None:
-        """Subscriber: triggered when Engine publishes Execution:Completed/Failed."""
-        edata = event.data
-        exec_result: ExecutionResult = edata.get("execution_result")
-        if not exec_result:
-            logger.warning("Execution completed event missing execution_result")
-            return
-
-        if verbose:
-            finished = exec_result.completed_at
-            started = exec_result.started_at
-            elapsed = (finished - started).total_seconds() if finished and started else 0
-            print(f"  Execution done: {exec_result.status} ({elapsed:.1f}s)", file=sys.stderr)
-
-        # Review
-        verdict = do_review(exec_result, bus=bus)
-        if verbose:
-            print(f"  Review: {'PASS' if verdict.passed else 'FAIL'}", file=sys.stderr)
-
-        # Report
-        report_md = format_report(exec_result, verdict=verdict)
-        _results.append((exec_result, verdict, report_md))
-
-    bus.subscribe("Execution:Completed", _on_execution_completed)
-    bus.subscribe("Execution:Failed", _on_execution_completed)
 
     try:
         exec_result = engine.execute(plan)
@@ -284,15 +256,19 @@ def _cmd_run(args: argparse.Namespace) -> int:
         print(f"Execution failed: {e}", file=sys.stderr)
         return 1
 
-    # Read subscriber results
-    if not _results:
-        # Fallback: engine didn't publish (v1 sync path)
-        if verbose:
-            print(f"  (event subscriber didn't trigger — using direct return)", file=sys.stderr)
-        verdict = do_review(exec_result, bus=bus)
-        report_md = format_report(exec_result, verdict=verdict)
-    else:
-        exec_result, verdict, report_md = _results[0]
+    if verbose:
+        finished = exec_result.completed_at
+        started = exec_result.started_at
+        elapsed = (finished - started).total_seconds() if finished and started else 0
+        print(f"  Execution done: {exec_result.status} ({elapsed:.1f}s)", file=sys.stderr)
+
+    # Review
+    verdict = do_review(exec_result, bus=bus)
+    if verbose:
+        print(f"  Review: {'PASS' if verdict.passed else 'FAIL'}", file=sys.stderr)
+
+    # Report
+    report_md = format_report(exec_result, verdict=verdict)
 
     use_json = getattr(args, "json", False)
 
