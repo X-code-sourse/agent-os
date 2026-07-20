@@ -1,7 +1,6 @@
 """Capability Pool — RFC-0200/0203.
 
 Manages invocation of capabilities with invoke/cancel/status interface.
-Provides _LegacyAdapter to bridge existing TaskExecutor registrations.
 """
 
 from __future__ import annotations
@@ -9,10 +8,9 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
 from typing import Any
 
-from .models import PlannedTask, TaskResult, TaskState
+from .models import PlannedTask
 
 logger = logging.getLogger(__name__)
 
@@ -48,17 +46,10 @@ class CapabilityPool:
         self._registry: dict[str, Callable] = {}
         self._invocations: dict[str, InvocationResult] = {}
 
-    # ── Registration ────────────────────────────────────────────────
-
     def register(self, task_type: str, fn: Callable) -> None:
-        """Register a callable for a task type.
-
-        Accepts both plain functions and _LegacyAdapter-wrapped callables.
-        """
+        """Register a callable for a task type."""
         self._registry[task_type] = fn
-        logger.debug("Pool: registered type=%s fn=%s", task_type, getattr(fn, "__name__", fn))
-
-    # ── Invocation ──────────────────────────────────────────────────
+        logger.debug("Pool: registered type=%s", task_type)
 
     def invoke(
         self,
@@ -96,23 +87,3 @@ class CapabilityPool:
     def status(self, task_id: str) -> InvocationResult | None:
         """Return the result of a completed invocation."""
         return self._invocations.get(f"invoc://pool/{task_id}")
-
-
-# ── Legacy adapter ─────────────────────────────────────────────────
-
-class _LegacyAdapter:
-    """Wraps a legacy (task, context) → output callable.
-
-    Maintains compatibility with existing executor functions registered
-    via ``engine.executor.register(type, fn)``.
-    """
-
-    def __init__(self, fn: Callable) -> None:
-        self._fn = fn
-
-    def __call__(self, task: PlannedTask, context: dict[str, Any]) -> Any:
-        return self._fn(task, context)
-
-    @property
-    def __name__(self) -> str:
-        return getattr(self._fn, "__name__", "legacy_adapter")

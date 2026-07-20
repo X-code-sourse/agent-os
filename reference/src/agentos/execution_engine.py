@@ -12,8 +12,7 @@ from collections import deque
 from datetime import datetime, timezone
 from typing import Any
 
-from .backbone.event import Event as BackboneEvent
-from .capability_pool import CapabilityPool, _LegacyAdapter
+from .capability_pool import CapabilityPool
 from .event_bus import EventBus
 from .models import (
     ExecutionResult,
@@ -105,7 +104,7 @@ class ExecutionEngine:
         })
 
         # ── Main execution loop ─────────────────────────────────────
-        while ready or running:
+        while ready:
             while ready:
                 task_id = ready.popleft()
                 task = task_map[task_id]
@@ -177,21 +176,12 @@ class ExecutionEngine:
     # ── Event publishing ────────────────────────────────────────────
 
     def _publish(self, event_type: str, payload: dict) -> None:
-        """Publish a standard BackboneEvent and a legacy P1 Event."""
+        """Publish an event through the Event Bus (legacy P1 Event)."""
         if not self.bus:
             return
-        # RFC-0500 compliant event
-        event = BackboneEvent.new(
-            event_type=event_type,
-            payload=payload,
-            source={"module": "execution_engine", "instance_id": ""},
-        )
-        # Publish to EventBus using models.Event (legacy) wrapped content
         from .models import Event as LegacyEvent
         self.bus.publish(LegacyEvent(
             type=event_type,
             source="execution_engine",
             data=payload,
         ))
-        # Also log the backbone event
-        logger.debug("Published: %s", event.event_type)

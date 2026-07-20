@@ -242,33 +242,43 @@ def _cmd_run(args: argparse.Namespace) -> int:
         for t in plan.tasks:
             print(f"    {t.id:20s}  type={t.type:10s}  deps={t.depends_on}", file=sys.stderr)
 
-    # ── Execute ─────────────────────────────────────────────────────
-    # Review + report run directly after execution instead of
-    # via event-bus subscriber, eliminating the subscriber+fallback
-    # dual-path race that would cause duplicate review/report calls
-    # if the bus were ever made asynchronous.
+    # ── Execute via Event Bus (A4) ──────────────────────────────────
+    # Subscribe to Execution:Completed before running engine.
+    # Subscriber (review + report) runs synchronously inside
+    # engine.execute()'s final _publish() call — deterministic,
+    # no dual-path risk (Constitution Article 4).
+    _results: list[tuple] = []
+
+    def _on_completed(event: Event) -> None:
+        edata = event.data
+        er: ExecutionResult | None = edata.get("execution_result")
+        if not er:
+            return
+        if verbose:
+            finished = er.completed_at
+            started = er.started_at
+            elapsed = (finished - started).total_seconds() if finished and started else 0
+            print(f"  Execution done: {er.status} ({elapsed:.1f}s)", file=sys.stderr)
+        v = do_review(er, bus=bus)
+        if verbose:
+            print(f"  Review: {'PASS' if v.passed else 'FAIL'}", file=sys.stderr)
+        rm = format_report(er, verdict=v)
+        _results.append((er, v, rm))
+
+    bus.subscribe("Execution:Completed", _on_completed)
+    bus.subscribe("Execution:Failed", _on_completed)
+
     if verbose:
         print(f"  Executing...", file=sys.stderr)
 
     try:
-        exec_result = engine.execute(plan)
+        engine.execute(plan)
     except Exception as e:
         print(f"Execution failed: {e}", file=sys.stderr)
         return 1
 
-    if verbose:
-        finished = exec_result.completed_at
-        started = exec_result.started_at
-        elapsed = (finished - started).total_seconds() if finished and started else 0
-        print(f"  Execution done: {exec_result.status} ({elapsed:.1f}s)", file=sys.stderr)
-
-    # Review
-    verdict = do_review(exec_result, bus=bus)
-    if verbose:
-        print(f"  Review: {'PASS' if verdict.passed else 'FAIL'}", file=sys.stderr)
-
-    # Report
-    report_md = format_report(exec_result, verdict=verdict)
+    # Subscriber ran synchronously — results guaranteed
+    exec_result, verdict, report_md = _results[0]
 
     use_json = getattr(args, "json", False)
 
