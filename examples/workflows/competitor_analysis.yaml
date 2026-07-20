@@ -1,0 +1,47 @@
+id: competitor_analysis
+name: 竞争者分析工作流
+description: 对指定行业或公司进行竞争格局分析
+
+rules:
+  - max_tasks: 8
+  - timeout_seconds: 180
+
+tasks:
+  - id: search_market
+    type: search
+    params:
+      query: "{query} 市场份额 竞争格局"
+      limit: 5
+    depends_on: []
+
+  - id: search_competitors
+    type: search
+    params:
+      query: "{query} 主要竞争对手 排名"
+      limit: 5
+    depends_on: []
+
+  - id: llm_competitor_analysis
+    type: llm
+    params:
+      prompt: |
+        基于以下信息分析{query}的竞争格局：
+
+        市场信息：{search_market.output}
+
+        竞争对手：{search_competitors.output}
+
+        请提供：
+        1) 市场概况
+        2) 主要参与者
+        3) 竞争优势与劣势
+        4) 未来趋势预测
+    depends_on: [search_market, search_competitors]
+
+  - id: final_report
+    type: report
+    params:
+      sections:
+        - title: "🏢 {query} 竞争分析报告"
+          content: "{llm_competitor_analysis.output}"
+    depends_on: [llm_competitor_analysis]

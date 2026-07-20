@@ -1,0 +1,54 @@
+id: stock_research
+name: 股票研究工作流
+description: 对指定股票进行多维度分析并生成研究简报
+
+rules:
+  - max_tasks: 10
+  - timeout_seconds: 120
+
+tasks:
+  - id: search_news
+    type: search
+    params:
+      query: "{query} 最新新闻 2025"
+      sources: [web, news]
+      limit: 5
+    depends_on: []
+
+  - id: search_financials
+    type: search
+    params:
+      query: "{query} 财务数据 营收 利润"
+      sources: [web]
+      limit: 3
+    depends_on: []
+
+  - id: llm_analysis
+    type: llm
+    params:
+      prompt: |
+        基于以下信息对{query}进行分析：
+
+        新闻信息：{search_news.output}
+
+        财务信息：{search_financials.output}
+
+        请提供：
+        1) 投资亮点
+        2) 风险因素
+        3) 综合评估
+    depends_on: [search_news, search_financials]
+
+  - id: review_result
+    type: review
+    params:
+      checks: [non_empty, min_length]
+    depends_on: [llm_analysis]
+
+  - id: generate_report
+    type: report
+    params:
+      sections:
+        - title: "📊 {query} 研究报告"
+          content: "{llm_analysis.output}"
+    depends_on: [review_result]
