@@ -11,7 +11,6 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from ..registry import Registry
 
-from ..registry import CapabilityManifest
 from ..registry.manifest import load_manifest_from_yaml
 
 logger = logging.getLogger(__name__)

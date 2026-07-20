@@ -14,8 +14,7 @@ class SchemaRegistry:
     def register(self, event_type: str, version: int, schema: dict[str, Any],
                  *, description: str = "", producer: str = "",
                  consumers: list[str] | None = None) -> None:
-        key = (event_type, version)
-        if key in self._schemas.get(event_type, {}):
+        if version in self._schemas.get(event_type, {}):
             raise ValueError(f"Schema {event_type} v{version} already registered")
         self._schemas.setdefault(event_type, {})[version] = {
             "schema": schema,

@@ -146,7 +146,7 @@ def _cmd_capability_scaffold(args: argparse.Namespace) -> int:
 
 def _cmd_capability_discover(args: argparse.Namespace) -> int:
     from .sdk.loader import discover_capabilities
-    directory = getattr(args, "directory", ".")
+    directory = getattr(args, "path", ".") or "."
     try:
         count = discover_capabilities(directory)
         print(f"Discovered {count} external capabilities")
