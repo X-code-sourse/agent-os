@@ -6,6 +6,9 @@ on:
   pull_request:
     branches: [main]
 
+env:
+  PYTHONPATH: ${{ github.workspace }}/reference/src
+
 jobs:
   verify:
     runs-on: ubuntu-latest
@@ -21,72 +24,35 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install reference implementation
+      - name: Install deps
+        run: pip install --upgrade pip && pip install pyyaml
+
+      - name: Install reference
         run: pip install -e .
 
-      - name: Validate example workflows
-        run: |
-          echo "=== stock_research.yaml ==="
-          agentos workflow validate ../examples/workflows/stock_research.yaml
-          echo "=== competitor_analysis.yaml ==="
-          agentos workflow validate ../examples/workflows/competitor_analysis.yaml
+      - name: CLI works
+        run: python -m agentos.cli list
 
-      - name: Validate example rules
+      - name: Validate workflows
         run: |
-          echo "=== sec-filing-rule.yaml ==="
-          python -c "
-import yaml
-with open('../examples/rules/sec-filing-rule.yaml') as f:
-    data = yaml.safe_load(f)
-assert data['rule_id'] == 'rule://finance/sec-filing', f\"Bad rule_id: {data['rule_id']}\"
-assert 'constraints' in data and len(data['constraints']) > 0
-assert data['governance']['status'] == 'approved'
-print(f\"Rule OK: {data['rule_id']} ({len(data['constraints'])} constraints)\")
-"
+          python -m agentos.cli workflow validate ../examples/workflows/stock_research.yaml
+          python -m agentos.cli workflow validate ../examples/workflows/competitor_analysis.yaml
 
-      - name: E2E — run workflow with JSON output
+      - name: Validate rules
+        run: python ../ci/check_rule.py
+
+      - name: E2E run
         run: |
-          agentos run stock_research --query "test e2e" --json > /tmp/agentos-e2e.json
-          python -c "
-import json
-with open('/tmp/agentos-e2e.json') as f:
-    d = json.load(f)
-assert d['execution']['status'] == 'completed', f\"Status: {d['execution']['status']}\"
-assert len(d['tasks']) == 5, f\"Tasks: {len(d['tasks'])}\"
-assert d['review']['result'] == 'pass', f\"Review: {d['review']['result']}\"
-print(f\"E2E PASS — {len(d['tasks'])} tasks, review={d['review']['result']}\")
-"
+          python -m agentos.cli run stock_research --query "test ci" --json > /tmp/e2e.json
+          python ../ci/check_e2e.py
 
-      - name: Validate JSON schemas
+      - name: Validate schemas
+        run: python ../ci/check_schemas.py
+
+      - name: Import check
+        run: python ../ci/check_imports.py
+
+      - name: Workflow plan
         run: |
-          for f in ../schemas/execution/plan.json; do
-            echo "=== $f ==="
-            python -c "
-import json
-with open('$f') as fh:
-    s = json.load(fh)
-assert '\$schema' in s, f'Missing \$schema in $f'
-print(f'Schema OK: {s.get(\"title\", \"untitled\")} ({len(s.get(\"properties\", {}))} properties)')
-"
-          done
-
-      - name: Validate Python imports
-        run: python -c "
-from agentos.cli import build_parser, main
-from agentos.llm_executor import LlmConfig, call_llm
-from agentos.planner import plan as do_plan
-from agentos.execution_engine import ExecutionEngine
-from agentos.reviewer import review as do_review
-from agentos.reporter import format_report
-from agentos.workflow_loader import discover_workflows, load, load_from_path
-from agentos.models import Workflow, TaskDef, Plan, PlannedTask, TaskResult, ExecutionResult, ReviewCheck, ReviewVerdict, Event
-from agentos.event_bus import EventBus
-print(f'All modules import OK ({len(dir())} symbols)')
-"
-
-      - name: Verify CLI help for all commands
-        run: |
-          for cmd in "run --help" "list --help" "inspect --help" "workflow validate --help" "workflow plan --help"; do
-            echo "=== agentos $cmd ==="
-            agentos $cmd 2>&1 | head -3
-          done
+          python -m agentos.cli workflow plan stock_research --query "test ci" --json > /tmp/plan.json
+          python -c "import json; d=json.load(open('/tmp/plan.json')); assert len(d['stages'])>0; print(f'Plan OK: {len(d[\"stages\"])} stages')"
