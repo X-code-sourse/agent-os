@@ -15,9 +15,12 @@ build/
 .vscode/
 .idea/
 
-# AI session context — not for public repo
+# AI session context & strategic planning — not for public repo
 CLAUDE.md
 GUIDE.md
+PITCH.md
+PLAN.md
+AGENT_HOOK.md
 
 # Built documentation site
 site/
