@@ -20,6 +20,7 @@ import commands.export
 import commands.quickstart
 import commands.evolution
 import commands.ask
+import commands.demo
 
 # All cmd_* functions are imported from command modules via the registry pattern below
 CMD_MAP = {
@@ -37,6 +38,7 @@ CMD_MAP = {
     "quickstart": commands.quickstart.cmd_quickstart,
     "evolution": commands.evolution.cmd_evolution,
     "ask": commands.ask.cmd_ask,
+    "demo": commands.demo.cmd_demo,
 }
 
 def build_parser() -> argparse.ArgumentParser:
@@ -209,6 +211,10 @@ def build_parser() -> argparse.ArgumentParser:
     ask_parser.add_argument("query", nargs="?", default=None, help="Natural language query")
     ask_parser.add_argument("--provider", default="auto", help="LLM provider (auto, ollama, openai, anthropic)")
     ask_parser.set_defaults(func=CMD_MAP["ask"])
+
+    # demo
+    demo_parser = subparsers.add_parser("demo", help="Run an interactive terminal demo")
+    demo_parser.set_defaults(func=CMD_MAP["demo"])
 
     return parser
 
