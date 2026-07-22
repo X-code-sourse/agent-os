@@ -27,13 +27,7 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install mkdocs mkdocs-material
-      - name: Debug build
-        run: |
-          set -x
-          python --version
-          pip show mkdocs mkdocs-material
-          mkdocs --version
-          mkdocs build 2>&1 || echo "BUILD_EXIT_CODE=$?"
+      - run: mkdocs build --strict
       - uses: actions/upload-pages-artifact@v3
         with:
           path: site/
