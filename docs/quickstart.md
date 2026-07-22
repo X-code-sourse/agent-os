@@ -112,4 +112,4 @@ intent-os demo --auto
 
 - [Learn how to write your own Manifest](guide/manifest.md)
 - [Explore all 16 CLI commands](cli/commands.md)
-- [Browse built-in examples](https://github.com/X-code-sourse/intentos/tree/main/examples)
+- [Browse built-in examples](https://github.com/haihaoxu/intentos/tree/main/examples)

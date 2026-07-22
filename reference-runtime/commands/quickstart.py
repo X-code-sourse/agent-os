@@ -104,5 +104,5 @@ def cmd_quickstart(args: Any) -> None:
     print()
     print("  Need help?")
     print("    Read the docs:   specs/SPEC-0001-capability-manifest.md")
-    print("    Visit:           https://github.com/X-code-sourse/intentos")
+    print("    Visit:           https://github.com/haihaoxu/intentos")
     print()

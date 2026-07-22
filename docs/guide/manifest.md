@@ -148,6 +148,6 @@ Each input/output field supports optional constraints:
 
 ## Next Steps
 
-- [Explore built-in examples](https://github.com/X-code-sourse/intentos/tree/main/examples)
+- [Explore built-in examples](https://github.com/haihaoxu/intentos/tree/main/examples)
 - [Learn about running capabilities](runtime.md)
 - [Browse the CLI reference](../cli/commands.md)

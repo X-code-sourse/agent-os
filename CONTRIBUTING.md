@@ -9,7 +9,7 @@ Intent OS is an **open interoperability layer for AI capabilities, workflows, an
 ## Getting started
 
 ```bash
-git clone https://github.com/X-code-sourse/intentos.git
+git clone https://github.com/haihaoxu/intentos.git
 cd intent-os/reference-runtime
 pip install -e .
 
@@ -21,14 +21,14 @@ python -m pytest tests/ -q
 
 ### Reporting bugs
 
-Open a [Bug Report](https://github.com/X-code-sourse/intentos/issues/new?labels=bug&template=bug_report.md). Include:
+Open a [Bug Report](https://github.com/haihaoxu/intentos/issues/new?labels=bug&template=bug_report.md). Include:
 - The exact command that triggered the bug
 - Your environment (OS, Python version, adapter)
 - The full error output
 
 ### Suggesting features
 
-Open a [Feature Request](https://github.com/X-code-sourse/intentos/issues/new?labels=enhancement&template=feature_request.md). Tell us:
+Open a [Feature Request](https://github.com/haihaoxu/intentos/issues/new?labels=enhancement&template=feature_request.md). Tell us:
 - What problem you're trying to solve
 - How you imagine the solution working
 - What alternatives you've considered
@@ -92,4 +92,4 @@ intent-os/
 
 ## Questions?
 
-Open a [Discussion](https://github.com/X-code-sourse/intentos/discussions) or reach out on GitHub Issues.
+Open a [Discussion](https://github.com/haihaoxu/intentos/discussions) or reach out on GitHub Issues.

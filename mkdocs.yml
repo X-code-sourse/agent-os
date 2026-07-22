@@ -2,8 +2,8 @@
 site_name: Intent OS
 site_description: "An open interoperability layer for AI capabilities — write once, run on any runtime."
 site_url: https://intent-os.org
-repo_url: https://github.com/X-code-sourse/intentos
-repo_name: X-code-sourse/intentos
+repo_url: https://github.com/haihaoxu/intentos
+repo_name: haihaoxu/intentos
 edit_uri: edit/main/docs/
 
 theme:
@@ -45,7 +45,7 @@ theme:
 extra:
   social:
     - icon: fontawesome/brands/github
-      link: https://github.com/X-code-sourse/intentos
+      link: https://github.com/haihaoxu/intentos
 
 markdown_extensions:
   - admonition
@@ -77,8 +77,8 @@ nav:
       - Code Review: examples/code_review.md
       - Sentiment Analysis: examples/sentiment_analyze.md
   - Reference:
-      - Specs (GitHub): https://github.com/X-code-sourse/intentos/tree/main/specs
+      - Specs (GitHub): https://github.com/haihaoxu/intentos/tree/main/specs
 
 copyright: |
   &copy; 2026 Intent OS Project —
-  <a href="https://github.com/X-code-sourse/intentos/blob/main/LICENSE">MIT License</a>
+  <a href="https://github.com/haihaoxu/intentos/blob/main/LICENSE">MIT License</a>

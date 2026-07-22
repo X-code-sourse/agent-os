@@ -7,8 +7,8 @@
 <p align="center">
   <a href="https://pypi.org/project/intentos/"><img src="https://img.shields.io/badge/pip-install%20intentos-blue?style=flat&logo=python" alt="pip install"></a>
   <a href="https://x-code-sourse.github.io/intentos/"><img src="https://img.shields.io/badge/docs-intent--os.org-blue?style=flat" alt="Docs"></a>
-  <a href="https://github.com/X-code-sourse/intentos"><img src="https://img.shields.io/badge/github-X--code--sourse/intentos-blue?style=flat&logo=github" alt="GitHub"></a>
-  <a href="https://github.com/X-code-sourse/intentos/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-AGPLv3-blue?style=flat" alt="License"></a>
+  <a href="https://github.com/haihaoxu/intentos"><img src="https://img.shields.io/badge/github-X--code--sourse/intentos-blue?style=flat&logo=github" alt="GitHub"></a>
+  <a href="https://github.com/haihaoxu/intentos/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-AGPLv3-blue?style=flat" alt="License"></a>
 </p>
 
 ---

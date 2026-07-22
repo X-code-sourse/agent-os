@@ -78,7 +78,7 @@ They are complementary: Intent OS can consume MCP servers as capability provider
 
 :material-test-tube: **Phase 0: Interoperability Verified** — 689 tests, 8 skipped, 0 failures
 
-The same manifest parses, executes, and produces compatible events across Ollama, OpenAI, and Anthropic runtimes. [See the specs](https://github.com/X-code-sourse/intentos/tree/main/specs) for details.
+The same manifest parses, executes, and produces compatible events across Ollama, OpenAI, and Anthropic runtimes. [See the specs](https://github.com/haihaoxu/intentos/tree/main/specs) for details.
 
 ---
 
@@ -89,4 +89,4 @@ The same manifest parses, executes, and produces compatible events across Ollama
 | :material-speedometer: | [Quickstart — 60 seconds to first command](quickstart.md) |
 | :material-file-document: | [Learn the Manifest format](guide/manifest.md) |
 | :material-book-open-variant: | [Browse the CLI reference](cli/commands.md) |
-| :material-github: | [Star the repo](https://github.com/X-code-sourse/intentos) |
+| :material-github: | [Star the repo](https://github.com/haihaoxu/intentos) |

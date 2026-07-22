@@ -34,10 +34,10 @@ ask = ["openai>=1.0.0", "anthropic>=0.30.0"]
 all = ["ask", "requests>=2.28"]
 
 [project.urls]
-Homepage = "https://github.com/X-code-sourse/intentos"
+Homepage = "https://github.com/haihaoxu/intentos"
 Documentation = "https://intent-os.org"
-Source = "https://github.com/X-code-sourse/intentos"
-BugTracker = "https://github.com/X-code-sourse/intentos/issues"
+Source = "https://github.com/haihaoxu/intentos"
+BugTracker = "https://github.com/haihaoxu/intentos/issues"
 
 [project.scripts]
 intent-os = "cli:main"
