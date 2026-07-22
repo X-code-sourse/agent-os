@@ -163,7 +163,7 @@ def cmd_demo(args: Any) -> None:
     _print_slow("  Your AI coding agent is a black box.")
     _print_slow("  Agent Flight Recorder opens it.")
     print()
-    _print_slow("  Install:  pip install intent-os")
+    _print_slow("  Install:  pip install intentos")
     _print_slow("  Run:      intent-os demo --auto")
     _print_slow("  Docs:     https://intent-os.org")
     print()
