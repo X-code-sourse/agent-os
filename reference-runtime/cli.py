@@ -141,7 +141,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     # workflow
     workflow_parser = subparsers.add_parser("workflow", help="Plan and run workflows")
-    workflow_parser.add_argument("action", choices=["run", "plan"])
+    workflow_parser.add_argument("action", choices=["run", "plan", "optimize"])
     workflow_parser.add_argument("query", nargs="?", default=None,
                                  help="Workflow YAML path (for run) or goal text (for plan)")
     workflow_parser.add_argument("--input", "-i", default=None, help="Input JSON (for run)")

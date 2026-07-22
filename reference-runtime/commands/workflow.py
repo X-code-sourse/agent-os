@@ -25,6 +25,7 @@ def cmd_workflow(args: Any) -> None:
     from core.recorder import ExecutionRecorder
     from core.scheduler import Scheduler
     from core.planner import WorkflowPlanner
+    from core.cost_model import CostModel
     from core.registry import CapabilityRegistry
 
     if args.action == "run":
@@ -134,3 +135,62 @@ def cmd_workflow(args: Any) -> None:
             print(f"{prefix}{task.id} ({task.capability})")
 
         print(f"\n  Run with: intent-os workflow run <file.yaml>")
+
+    elif args.action == "optimize":
+        # Plan optimization: enumerate candidates, compare costs, recommend
+        executor = SimulatedExecutor()
+        manifests = register_mock_capabilities(executor)
+        registry = CapabilityRegistry()
+        for m in manifests.values():
+            registry.register(m)
+
+        cost_model = CostModel()
+        planner = WorkflowPlanner(registry=registry, cost_model=cost_model)
+        goal_text = args.query or "default research task"
+
+        try:
+            multi = planner.plan_candidates(goal_text, top_n=3)
+        except Exception as exc:
+            print(f"Optimization failed: {exc}", file=sys.stderr)
+            sys.exit(1)
+
+        if not multi.plans:
+            print("No candidate plans generated.", file=sys.stderr)
+            sys.exit(1)
+
+        print(f'Plan Comparison for: "{goal_text}"')
+        print("─" * 43)
+
+        display_adapters = ["ollama", "openai", "anthropic"]
+
+        for i, (plan, estimate) in enumerate(multi.plans):
+            template_name = plan.template_name
+            task_ids = "+".join(t.id for t in plan.workflow_dag.spec.tasks)
+
+            adapter = display_adapters[i] if i < len(display_adapters) else display_adapters[0]
+
+            # Re-estimate under this adapter for realistic display values
+            total_cost = 0.0
+            total_latency = 0
+            for _, cap in plan.matched_capabilities.items():
+                est = cost_model.estimate(cap, adapter, 1000)
+                total_cost += est.cost_usd
+                total_latency += est.latency_ms
+
+            task_count = len(plan.workflow_dag.spec.tasks)
+
+            marker = "★ Recommended" if i == multi.recommended_index else "Alternate"
+
+            # Model display
+            model = CostModel.DEFAULT_MODELS.get(adapter, "")
+            adapter_pricing = CostModel.ADAPTER_PRICING.get(adapter, {})
+            if adapter_pricing == {}:  # empty dict = free tier
+                model_display = f"{adapter} (free)"
+            else:
+                model_display = f"{adapter} ({model})"
+
+            print(f"\n[{i+1}] {marker}: {template_name} ({task_ids})")
+            print(f"    Cost: ${total_cost:.4f} | Latency: {total_latency/1000:.1f}s | Tasks: {task_count}")
+            print(f"    Adapter: {model_display}")
+
+        print(f"\n  Run with: intent-os workflow run <file> --adapter <name>")

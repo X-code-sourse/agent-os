@@ -19,7 +19,7 @@ Future evolution (Phase 3+):
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 from core.models import CapabilityManifest
@@ -39,6 +39,8 @@ from core.workflow import (
     WorkflowTask,
     WorkflowValidationError,
 )
+
+from core.cost_model import CostModel, CostEstimate, MultiPlanResult
 
 
 # ──────────────────────────────────────────────
@@ -221,6 +223,31 @@ class PlanResult:
     warnings: list[str] = field(default_factory=list)
 
 
+def _plans_are_identical(
+    plan: PlanResult,
+    existing: list[tuple[Any, CostEstimate]],
+) -> bool:
+    """Check if a plan is structurally identical to any already in the list.
+
+    Compares task capabilities, edge structure, and execution semantics
+    to detect true duplicates (same capability choices and semantics).
+    """
+    for existing_plan, _ in existing:
+        s1 = plan.workflow_dag.spec
+        s2 = existing_plan.workflow_dag.spec
+        if (
+            s1.semantics.parallel.strategy == s2.semantics.parallel.strategy
+            and s1.semantics.retry == s2.semantics.retry
+            and len(s1.tasks) == len(s2.tasks)
+            and len(s1.edges) == len(s2.edges)
+            and {t.capability for t in s1.tasks} == {t.capability for t in s2.tasks}
+            and {(e.from_task, e.to_task) for e in s1.edges}
+            == {(e.from_task, e.to_task) for e in s2.edges}
+        ):
+            return True
+    return False
+
+
 class WorkflowPlanner:
     """
     Template-based workflow planner.
@@ -241,10 +268,12 @@ class WorkflowPlanner:
         registry: CapabilityRegistry | None = None,
         templates: list[WorkflowTemplate] | None = None,
         analytics: Any | None = None,
+        cost_model: CostModel | None = None,
     ) -> None:
         self._registry = registry
         self._templates = templates or BUILTIN_TEMPLATES
         self._analytics = analytics
+        self._cost_model = cost_model
 
     def set_registry(self, registry: CapabilityRegistry) -> None:
         self._registry = registry
@@ -368,6 +397,97 @@ class WorkflowPlanner:
             warnings=warnings,
         )
 
+    # ── Multi-Plan Enumeration ────────────────────────────────────
+
+    def plan_candidates(
+        self,
+        goal: str,
+        context: dict[str, Any] | None = None,
+        top_n: int = 3,
+    ) -> MultiPlanResult:
+        """
+        Enumerate multiple candidate plans for a goal, estimate costs,
+        and return them sorted cheapest-first.
+
+        Args:
+            goal: The user's goal description.
+            context: Optional context parameters.
+            top_n: Maximum number of candidate plans to generate (default 3).
+
+        Returns:
+            MultiPlanResult with candidate plans, cost estimates,
+            and recommended_index pointing to the cheapest plan.
+        """
+        context = context or {}
+        goal_fields = self._parse_goal(goal)
+        goal_fields.update(context)
+
+        # Step 1: Get the best-matching template
+        template = self._match_template(goal)
+        if template is None:
+            template = self._create_passthrough_template(goal)
+
+        candidates: list[tuple[Any, CostEstimate]] = []
+
+        # Variant 1: default template (as-is)
+        try:
+            plan_default = self.plan(goal, context)
+            candidates.append((plan_default, self._estimate_plan(plan_default)))
+        except PlanError:
+            pass
+
+        # Variant 2: cheaper capability alternatives
+        if top_n >= 2:
+            try:
+                plan_cheap = self._build_plan_candidate(
+                    template, goal, goal_fields,
+                    prefer_cheap_caps=True,
+                )
+                cost_cheap = self._estimate_plan(plan_cheap)
+                if not _plans_are_identical(plan_cheap, candidates):
+                    candidates.append((plan_cheap, cost_cheap))
+            except PlanError:
+                pass
+
+        # Variant 3: flip execution semantics (sequential -> parallel / parallel -> sequential)
+        if top_n >= 3:
+            try:
+                plan_flip = self._build_plan_candidate(
+                    template, goal, goal_fields,
+                    force_parallel=True,
+                )
+                cost_flip = self._estimate_plan(plan_flip)
+                if not _plans_are_identical(plan_flip, candidates):
+                    candidates.append((plan_flip, cost_flip))
+            except PlanError:
+                pass
+
+        # Sort by total estimated cost (cheapest first), break ties by latency
+        candidates.sort(key=lambda x: (x[1].cost_usd, x[1].latency_ms))
+
+        return MultiPlanResult(plans=candidates, recommended_index=0)
+
+    @staticmethod
+    def plan_summary(plan_result: PlanResult) -> dict[str, Any]:
+        """
+        Build a human-readable summary dict for CLI display.
+
+        Args:
+            plan_result: A PlanResult from plan() or plan_candidates().
+
+        Returns:
+            Dict with task_count, edge_count, template, goal, and the
+            estimated cost / latency fields (set to 0 if no CostModel
+            was used during planning).
+        """
+        task_count = len(plan_result.workflow_dag.spec.tasks)
+        return {
+            "template": plan_result.template_name,
+            "goal": plan_result.goal,
+            "task_count": task_count,
+            "edge_count": len(plan_result.workflow_dag.spec.edges),
+        }
+
     def _parse_goal(self, goal: str) -> dict[str, str]:
         """Parse a natural language goal into structured fields.
 
@@ -460,6 +580,40 @@ class WorkflowPlanner:
         matches.sort(key=lambda x: -x[2])
         return self._registry.get(matches[0][0], matches[0][1])
 
+    def _resolve_cheapest_capability(
+        self,
+        pattern: str,
+    ) -> CapabilityManifest | None:
+        """
+        Match a capability pattern and return the cheapest alternative.
+
+        Uses the CostModel to estimate each matching capability's cost
+        and returns the one with the lowest estimated cost.
+        Falls back to _resolve_capability if no CostModel is available.
+        """
+        if self._cost_model is None:
+            return self._resolve_capability(pattern)
+
+        if self._registry is None:
+            return None
+
+        regex_pattern = re.escape(pattern).replace(r"\*", ".*")
+        compiled = re.compile(f"^{regex_pattern}$", re.IGNORECASE)
+
+        matches: list[tuple[str, str, float]] = []
+        capabilities = self._registry.list_capabilities()
+        for cap_info in capabilities:
+            if compiled.match(cap_info["name"]):
+                cap = self._registry.get(cap_info["name"], cap_info["version"])
+                if cap is not None:
+                    est = self._cost_model.estimate(cap, "openai", 1000)
+                    matches.append((cap_info["name"], cap_info["version"], est.cost_usd))
+
+        if not matches:
+            return None
+        matches.sort(key=lambda x: x[2])  # Sort by cost ascending
+        return self._registry.get(matches[0][0], matches[0][1])
+
     def _resolve_inputs(
         self,
         input_template: dict[str, str],
@@ -506,4 +660,168 @@ class WorkflowPlanner:
             edges=[],
             semantics=ExecutionSemantics.defaults(),
             priority=0,
+        )
+
+    # ── Candidate Building Helpers ──
+
+    def _build_plan_candidate(
+        self,
+        template: WorkflowTemplate,
+        goal: str,
+        goal_fields: dict[str, str],
+        prefer_cheap_caps: bool = False,
+        force_parallel: bool = False,
+    ) -> PlanResult:
+        """
+        Build a PlanResult from a template with optional variations.
+
+        Args:
+            template: The workflow template to instantiate.
+            goal: Original goal string.
+            goal_fields: Parsed goal fields.
+            prefer_cheap_caps: If True, resolve cheapest capabilities.
+            force_parallel: If True, toggle the execution semantics
+                            (sequential -> parallel or vice versa).
+
+        Returns:
+            A validated PlanResult.
+        """
+        matched_caps: dict[str, CapabilityManifest] = {}
+        warnings: list[str] = []
+
+        for tmpl_task in template.tasks:
+            if self._registry is None:
+                from core.models import (
+                    CapabilityManifest, MetadataSpec, FieldSchema,
+                    RequirementSpec, SecuritySpec,
+                )
+                warnings.append(
+                    f"No registry available; using placeholder for '{tmpl_task.id}'"
+                )
+                matched_caps[tmpl_task.id] = CapabilityManifest(
+                    metadata=MetadataSpec(
+                        name=tmpl_task.id,
+                        version="1.0.0",
+                        description=tmpl_task.description or "",
+                    ),
+                    input_schema={"input": FieldSchema(type="string")},
+                    output_schema={"output": FieldSchema(type="string")},
+                    requirements=RequirementSpec(),
+                    security=SecuritySpec(),
+                )
+                continue
+
+            if prefer_cheap_caps:
+                cap = self._resolve_cheapest_capability(tmpl_task.capability_pattern)
+            else:
+                cap = self._resolve_capability(tmpl_task.capability_pattern)
+            if cap is None:
+                raise NoCapabilityMatchError(
+                    f"No capability matches pattern '{tmpl_task.capability_pattern}' "
+                    f"for task '{tmpl_task.id}'"
+                )
+            matched_caps[tmpl_task.id] = cap
+
+        # Instantiate tasks with concrete capabilities
+        tasks: list[WorkflowTask] = []
+        for tmpl_task in template.tasks:
+            cap = matched_caps[tmpl_task.id]
+            resolved_input = self._resolve_inputs(
+                tmpl_task.input_template, goal_fields, {},
+            )
+            tasks.append(WorkflowTask(
+                id=tmpl_task.id,
+                capability=cap.id,
+                input=resolved_input,
+                description=tmpl_task.description,
+            ))
+
+        # Instantiate edges
+        edges: list[WorkflowEdge] = []
+        for tmpl_edge in template.edges:
+            edges.append(WorkflowEdge(
+                from_task=tmpl_edge.from_task,
+                to_task=tmpl_edge.to_task,
+                data=tmpl_edge.data_mapping,
+            ))
+
+        # Build the spec with optional semantics override
+        semantics = template.semantics or ExecutionSemantics.defaults()
+        if force_parallel:
+            current_strategy = semantics.parallel.strategy
+            new_strategy = (
+                ParallelStrategy.SEQUENTIAL
+                if current_strategy == ParallelStrategy.TASK_PARALLEL
+                else ParallelStrategy.TASK_PARALLEL
+            )
+            semantics = replace(
+                semantics,
+                parallel=ParallelPolicy(strategy=new_strategy),
+            )
+
+        spec = WorkflowSpec(
+            name=f"plan_{template.name}",
+            version="1.0.0",
+            tasks=tasks,
+            edges=edges,
+            semantics=semantics,
+            description=f"Planned workflow for: {goal}",
+            goal=goal,
+        )
+
+        # Validate and build DAG
+        try:
+            dag = WorkflowDAG(spec)
+        except WorkflowValidationError as exc:
+            raise PlanError(f"Workflow validation failed: {exc}") from exc
+
+        return PlanResult(
+            workflow_dag=dag,
+            template_name=template.name,
+            goal=goal,
+            matched_capabilities=matched_caps,
+            warnings=warnings,
+        )
+
+    def _estimate_plan(self, plan: PlanResult) -> CostEstimate:
+        """
+        Estimate total cost and latency for a complete plan.
+
+        Aggregates per-task estimates from the CostModel across all
+        matched capabilities in the plan.
+
+        Args:
+            plan: The PlanResult to estimate.
+
+        Returns:
+            CostEstimate with aggregated cost, latency, and token usage.
+        """
+        if self._cost_model is None:
+            return CostEstimate(0.0, 0, 0, "low", "default")
+
+        total_cost = 0.0
+        total_latency = 0
+        total_tokens = 0
+        confidences: list[str] = []
+
+        for task_id, cap in plan.matched_capabilities.items():
+            est = self._cost_model.estimate(cap, "openai", 1000)
+            total_cost += est.cost_usd
+            total_latency += est.latency_ms
+            total_tokens += est.tokens
+            confidences.append(est.confidence)
+
+        # Aggregate confidence conservatively (lowest wins)
+        agg_confidence: str = "high"
+        if "low" in confidences:
+            agg_confidence = "low"
+        elif "medium" in confidences:
+            agg_confidence = "medium"
+
+        return CostEstimate(
+            cost_usd=total_cost,
+            latency_ms=total_latency,
+            tokens=total_tokens,
+            confidence=agg_confidence,
+            source="default",
         )
