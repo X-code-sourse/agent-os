@@ -275,3 +275,90 @@ class TestRegistryEdgeCases:
         registry = CapabilityRegistry()
         registry.register(_make_manifest("memory_only"))
         assert registry.count() == 1
+
+
+# ──────────────────────────────────────────────
+# Semantic Search Integration
+# ──────────────────────────────────────────────
+
+class TestRegistrySemanticSearch:
+    """Test the find_by_text() search integration with CapabilityRegistry."""
+
+    def test_search_empty_registry(self):
+        """Searching an empty registry should return empty list."""
+        registry = CapabilityRegistry()
+        results = registry.find_by_text("anything")
+        assert results == []
+
+    def test_search_finds_by_name(self):
+        """Searching by capability name should find it."""
+        registry = CapabilityRegistry()
+        registry.register(_make_manifest(name="web_search"))
+        results = registry.find_by_text("web search")
+        assert len(results) >= 1
+        assert results[0]["capability"]["name"] == "web_search"
+
+    def test_search_finds_by_description(self):
+        """Searching by description text should find matching capabilities."""
+        registry = CapabilityRegistry()
+        registry.register(_make_manifest(name="financial_analyze"))
+        registry.register(_make_manifest(name="text_summarize"))
+        results = registry.find_by_text("Test financial_analyze")
+        assert len(results) >= 1
+        assert results[0]["capability"]["name"] == "financial_analyze"
+
+    def test_search_returns_scores(self):
+        """Results should include similarity scores."""
+        registry = CapabilityRegistry()
+        registry.register(_make_manifest(name="search_tool"))
+        results = registry.find_by_text("search_tool")
+        assert len(results) >= 1
+        for r in results:
+            assert "score" in r
+            assert 0.0 < r["score"] <= 1.0
+
+    def test_search_limit(self):
+        """limit parameter should cap results."""
+        registry = CapabilityRegistry()
+        for i in range(20):
+            registry.register(_make_manifest(name=f"cap_{i}"))
+        results = registry.find_by_text("test", limit=5)
+        assert len(results) <= 5
+
+    def test_search_after_registration(self):
+        """Newly registered capabilities should be searchable immediately."""
+        registry = CapabilityRegistry()
+        registry.register(_make_manifest(name="alpha"))
+        results_before = registry.find_by_text("alpha")
+        assert len(results_before) >= 1
+
+        registry.register(_make_manifest(name="beta"))
+        results_after = registry.find_by_text("beta")
+        assert len(results_after) >= 1
+        assert results_after[0]["capability"]["name"] == "beta"
+
+    def test_search_after_unregistration(self):
+        """Unregistered capabilities should not appear in search results."""
+        registry = CapabilityRegistry()
+        registry.register(_make_manifest(name="alpha_cap"))
+        registry.register(_make_manifest(name="beta_cap"))
+
+        # Search should find at least one
+        results_all = registry.find_by_text("test")
+        assert len(results_all) >= 1
+
+        # Remove alpha; search for its unique token should return nothing
+        registry.unregister("alpha_cap")
+        results_after = registry.find_by_text("alpha")
+        assert len(results_after) == 0
+
+    def test_search_scored_ranking(self):
+        """More relevant results should have higher scores."""
+        registry = CapabilityRegistry()
+        registry.register(_make_manifest(name="text_analyzer"))
+        registry.register(_make_manifest(name="image_processor"))
+
+        results = registry.find_by_text("text_analyzer")
+        assert len(results) >= 1
+        top = results[0]["capability"]["name"]
+        assert top == "text_analyzer"
