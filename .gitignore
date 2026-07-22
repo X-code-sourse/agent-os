@@ -22,3 +22,5 @@ GUIDE.md
 # Legacy build files — pyproject.toml is canonical
 reference-runtime/requirements.txt
 reference-runtime/setup.py
+*.record.json
+manifests/
