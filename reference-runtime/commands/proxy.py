@@ -32,8 +32,19 @@ def _cmd_start(args: Any) -> None:
 
     print()
     print("  ================================================")
-    print("    Agent Hook Proxy - AI Agent Flight Recorder")
+    print("    Intent OS Agent Hook Proxy")
     print("  ================================================")
+    print()
+    print(f"  Proxy listening on http://{host}:{port}")
+    print()
+    print("  Connect your AI agent:")
+    print()
+    print(f"    export OPENAI_BASE_URL=http://{host}:{port}")
+    print(f"    export ANTHROPIC_BASE_URL=http://{host}:{port}")
+    print()
+    print("  Then restart your agent. All executions will be recorded.")
+    print()
+    print("  Check your agent's health with:  intent-os doctor")
     print()
 
     try:

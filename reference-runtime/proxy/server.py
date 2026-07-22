@@ -245,16 +245,5 @@ def start_proxy(port: int = 8377, host: str = "127.0.0.1") -> ThreadedProxyServe
         The HTTP server instance (call .serve_forever() to run).
     """
     server = ThreadedProxyServer((host, port), ProxyHandler)
-    print(f"  Intent OS Agent Hook Proxy running on http://{host}:{port}")
-    print()
-    print(f"  OpenAI endpoint:   http://{host}:{port}/v1/chat/completions")
-    print(f"  Anthropic endpoint: http://{host}:{port}/v1/messages")
-    print()
-    print("  Set environment variables to use:")
-    print(f"    export OPENAI_API_BASE=http://{host}:{port}")
-    if port == 8377:
-        print(f"    export ANTHROPIC_BASE_URL=http://{host}:8378")
-    print()
-    print("  Press Ctrl+C to stop.")
-    print()
+    # Onboarding instructions are printed by commands/proxy.py
     return server
