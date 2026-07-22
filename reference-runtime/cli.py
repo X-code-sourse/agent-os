@@ -24,6 +24,7 @@ import commands.ask
 import commands.demo
 import commands.trace
 import commands.proxy
+import commands.doctor
 
 # All cmd_* functions are imported from command modules via the registry pattern below
 CMD_MAP = {
@@ -44,6 +45,7 @@ CMD_MAP = {
     "demo": commands.demo.cmd_demo,
     "inspect": commands.trace.cmd_inspect,
     "proxy": commands.proxy.cmd_proxy,
+    "doctor": commands.doctor.cmd_doctor,
 }
 
 def build_parser() -> argparse.ArgumentParser:
@@ -249,6 +251,11 @@ def build_parser() -> argparse.ArgumentParser:
     pst.add_argument("--port", type=int, default=8377, help="Port (default: 8377)")
     pst.add_argument("--host", default="127.0.0.1", help="Host (default: 127.0.0.1)")
     pst.set_defaults(func=CMD_MAP["proxy"])
+
+    # doctor
+    doctor_parser = subparsers.add_parser("doctor",
+        help="Check your AI agent's health — see what happened, what went wrong, and how to fix it")
+    doctor_parser.set_defaults(func=CMD_MAP["doctor"])
 
     return parser
 
