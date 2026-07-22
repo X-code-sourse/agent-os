@@ -34,7 +34,7 @@ from core.recorder import ExecutionRecorder
 
 
 # Schema version to support future migrations
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 # SQL statements for table creation
 CREATE_EVENTS_TABLE = """
@@ -97,6 +97,18 @@ CREATE TABLE IF NOT EXISTS meta (
 );
 """
 
+CREATE_TASK_STATE_TABLE = """
+CREATE TABLE IF NOT EXISTS task_state (
+    trace_id TEXT NOT NULL,
+    task_id TEXT NOT NULL,
+    workflow_id TEXT NOT NULL DEFAULT '',
+    field_name TEXT NOT NULL,
+    field_value TEXT NOT NULL DEFAULT '{}',
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (trace_id, task_id, field_name)
+);
+"""
+
 
 class EventStoreError(Exception):
     """Raised when Event Store operations fail."""
@@ -154,6 +166,7 @@ class EventStore:
         conn = self._get_conn()
         conn.execute(CREATE_EVENTS_TABLE)
         conn.execute(CREATE_EXECUTION_RECORDS_TABLE)
+        conn.execute(CREATE_TASK_STATE_TABLE)
         conn.execute(CREATE_META_TABLE)
         for idx in CREATE_INDEXES:
             try:
@@ -516,6 +529,113 @@ class EventStore:
         conn = self._get_conn()
         cursor = conn.execute(sql, params)
         return [dict(row) for row in cursor.fetchall()]
+
+    # ── Task State (Data Plane storage for Scheduler) ──
+
+    def save_task_state(
+        self,
+        trace_id: str,
+        task_id: str,
+        field_name: str,
+        field_value: str,
+        workflow_id: str = "",
+    ) -> None:
+        """Persist a single task state field to the Data Plane.
+
+        This is how the Scheduler satisfies R1 (Control Plane owns no
+        state) — instead of holding ``_task_outputs`` in memory, the
+        Scheduler writes each field as a row in the ``task_state`` table.
+        """
+        conn = self._get_conn()
+        conn.execute(
+            """INSERT OR REPLACE INTO task_state
+               (trace_id, task_id, workflow_id, field_name, field_value, updated_at)
+               VALUES (?, ?, ?, ?, ?, datetime('now'))""",
+            (trace_id, task_id, workflow_id, field_name, json.dumps(field_value)),
+        )
+        conn.commit()
+
+    def save_task_output(
+        self,
+        trace_id: str,
+        task_id: str,
+        output: dict[str, Any],
+        workflow_id: str = "",
+    ) -> None:
+        """Convenience: save a task's output dict as the ``output`` field."""
+        self.save_task_state(trace_id, task_id, "output", output, workflow_id)
+
+    def save_task_error(
+        self,
+        trace_id: str,
+        task_id: str,
+        error: str,
+        workflow_id: str = "",
+    ) -> None:
+        """Convenience: save a task's error as the ``error`` field."""
+        self.save_task_state(trace_id, task_id, "error", error, workflow_id)
+
+    def get_task_state(
+        self,
+        trace_id: str,
+        task_id: str,
+        field_name: str,
+    ) -> Any:
+        """Read a single task state field from the Data Plane."""
+        conn = self._get_conn()
+        cursor = conn.execute(
+            """SELECT field_value FROM task_state
+               WHERE trace_id = ? AND task_id = ? AND field_name = ?""",
+            (trace_id, task_id, field_name),
+        )
+        row = cursor.fetchone()
+        if row is None:
+            return None
+        try:
+            return json.loads(row["field_value"])
+        except (json.JSONDecodeError, TypeError):
+            return row["field_value"]
+
+    def get_all_task_outputs(self, trace_id: str) -> dict[str, Any]:
+        """Read all task outputs for a trace (used by Scheduler for condition evaluation)."""
+        conn = self._get_conn()
+        cursor = conn.execute(
+            """SELECT task_id, field_value FROM task_state
+               WHERE trace_id = ? AND field_name = 'output'""",
+            (trace_id,),
+        )
+        result: dict[str, Any] = {}
+        for row in cursor.fetchall():
+            try:
+                result[row["task_id"]] = json.loads(row["field_value"])
+            except (json.JSONDecodeError, TypeError):
+                result[row["task_id"]] = row["field_value"]
+        return result
+
+    def get_all_task_errors(self, trace_id: str) -> dict[str, str]:
+        """Read all task errors for a trace."""
+        conn = self._get_conn()
+        cursor = conn.execute(
+            """SELECT task_id, field_value FROM task_state
+               WHERE trace_id = ? AND field_name = 'error'""",
+            (trace_id,),
+        )
+        result: dict[str, str] = {}
+        for row in cursor.fetchall():
+            try:
+                val = json.loads(row["field_value"])
+                result[row["task_id"]] = str(val)
+            except (json.JSONDecodeError, TypeError):
+                result[row["task_id"]] = str(row["field_value"])
+        return result
+
+    def delete_task_state(self, trace_id: str) -> None:
+        """Clean up task state for a trace when it's no longer needed."""
+        conn = self._get_conn()
+        conn.execute("DELETE FROM task_state WHERE trace_id = ?", (trace_id,))
+        conn.commit()
+
+    # ── Legacy query interface ──
 
     def get_all_trace_ids(self) -> list[str]:
         """List all trace IDs in the store."""

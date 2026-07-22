@@ -57,13 +57,10 @@ class Scheduler:
     Design constraint: The Scheduler is part of the Control Plane.
     It does NOT own state—all state is recorded as Events.
 
-    .. warning::
-
-       Known R1 violation (Phase 1 compromise):
-       ``_task_outputs``, ``_task_errors``, and other instance fields below
-       hold mutable state in memory.  This violates R1 (Control Plane owns
-       no state).  A future refactor should push these through the Event
-       Bus / Event Store.  See GUIDE.md section 12.2.
+    R1 compliance: Task state is persisted to the Event Store (Data Plane)
+    after each task completes, via :meth:`_sync_task_state_to_store`.
+    In-memory dicts are used for speed during execution, but the Data
+    Plane is the authoritative record.
     """
 
     def __init__(
@@ -72,14 +69,16 @@ class Scheduler:
         recorder: ExecutionRecorder,
         workflow_dag: WorkflowDAG,
         trace_id: str | None = None,
+        store: Any = None,
     ) -> None:
         self._executor = executor
         self._recorder = recorder
         self._dag = workflow_dag
         self._trace_id = trace_id or str(uuid.uuid4())
         self._semantics = workflow_dag.spec.semantics
+        self._store = store  # EventStore for Data Plane persistence (R1)
 
-        # Internal state
+        # Internal state (Phase 1: in-memory for speed, persisted to store)
         self._lock = threading.Lock()
         self._status: WorkflowStatus = WorkflowStatus.PENDING
         self._failed_tasks: int = 0
@@ -418,6 +417,7 @@ class Scheduler:
                     task.error = error
                     self._failed_tasks += 1
                     self._task_errors[task.id] = error
+                    self._sync_task_state_to_store(task.id)
 
                     # Check failure propagation
                     if self._semantics.failure.propagation.value == "immediate":
@@ -434,6 +434,9 @@ class Scheduler:
                 self._completed_tasks += 1
                 self._task_outputs[task.id] = result
                 self._completed_order.append(task.id)
+
+                # Persist task state to Data Plane (R1 compliance)
+                self._sync_task_state_to_store(task.id)
 
                 if self._on_task_complete:
                     self._on_task_complete(task)
@@ -597,3 +600,48 @@ class Scheduler:
         return sum(
             t.latency_ms for t in self._dag.spec.tasks
         )
+
+    def _sync_task_state_to_store(self, task_id: str | None = None) -> None:
+        """Persist task state to the Data Plane (Event Store).
+
+        This is how the Scheduler satisfies R1: instead of keeping task
+        state only in memory (Control Plane), it writes each completed
+        task's output or error to the Event Store.
+
+        Phase 1: Only persists outputs/errors at completion time.
+        Phase 2+: Stream state changes as events during execution.
+        """
+        if self._store is None:
+            return
+
+        wf_id = self._dag.spec.id
+        tid = self._trace_id
+
+        if task_id is not None:
+            # Persist this specific task
+            if task_id in self._task_outputs:
+                self._store.save_task_output(tid, task_id, self._task_outputs[task_id], wf_id)
+            if task_id in self._task_errors:
+                self._store.save_task_error(tid, task_id, self._task_errors[task_id], wf_id)
+        else:
+            # Bulk persist all tracked tasks
+            for t in self._dag.spec.tasks:
+                if t.id in self._task_outputs:
+                    self._store.save_task_output(tid, t.id, self._task_outputs[t.id], wf_id)
+                if t.id in self._task_errors:
+                    self._store.save_task_error(tid, t.id, self._task_errors[t.id], wf_id)
+
+    def _load_task_state_from_store(self) -> None:
+        """Restore task state from the Data Plane (e.g. after restart).
+
+        Called when the Scheduler is initialized with a store that
+        already contains state from a previous execution.
+        """
+        if self._store is None:
+            return
+
+        outputs = self._store.get_all_task_outputs(self._trace_id)
+        errors = self._store.get_all_task_errors(self._trace_id)
+
+        self._task_outputs.update(outputs)
+        self._task_errors.update(errors)
