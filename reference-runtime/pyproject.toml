@@ -50,7 +50,7 @@ commands = ["*.yaml"]
 examples = ["*.yaml"]
 
 [tool.setuptools.packages.find]
-include = ["core*", "adapters*", "tools*", "commands*", "examples*"]
+include = ["core*", "adapters*", "tools*", "commands*", "examples*", "proxy*"]
 exclude = ["tests*"]
 
 [tool.pytest.ini_options]

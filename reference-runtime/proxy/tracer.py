@@ -1,0 +1,165 @@
+"""Intent OS — Agent Hook Tracer: records LLM API calls to Event Store.
+
+Detects the source AI agent (Claude Code, Cursor, Copilot, etc.)
+from HTTP headers and creates structured execution records.
+"""
+from __future__ import annotations
+
+import json
+import os
+import time
+import uuid
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+from core.event_store import EventStore, Event
+from core.models import EventType
+
+
+# ── Agent Detection ──
+
+_AGENT_SIGNATURES: list[tuple[str, str, str]] = [
+    # (header_name, header_value_substring, agent_name)
+    ("user-agent", "claude-code", "claude-code"),
+    ("user-agent", "ClaudeCode", "claude-code"),
+    ("user-agent", "Cursor", "cursor"),
+    ("user-agent", "cursor", "cursor"),
+    ("user-agent", "GitHubCopilot", "github-copilot"),
+    ("user-agent", "Copilot", "github-copilot"),
+    ("user-agent", "openai-python", "openai-sdk"),
+    ("user-agent", "OpenAI", "openai-sdk"),
+    ("user-agent", "python-requests", "python-sdk"),
+    ("user-agent", "Python", "python-sdk"),
+    ("user-agent", "o1", "custom-agent"),
+    ("x-request-id", "", "custom-agent"),
+]
+
+
+def detect_agent(headers: dict[str, str]) -> str:
+    """Try to identify the AI agent from request headers.
+
+    Returns a short string like ``"claude-code"``, ``"cursor"``,
+    ``"github-copilot"``, or ``"unknown"``.
+    """
+    headers_lower = {k.lower(): v for k, v in headers.items()}
+    for hdr_name, hdr_value, agent_name in _AGENT_SIGNATURES:
+        val = headers_lower.get(hdr_name, "")
+        if hdr_value and hdr_value.lower() in val.lower():
+            return agent_name
+        if not hdr_value and val:
+            return agent_name
+    return "unknown"
+
+
+# ── Cost Lookup ──
+
+_MODEL_PRICING_PER_1M: dict[str, dict[str, float]] = {
+    # OpenAI
+    "gpt-4o": {"input": 2.50, "output": 10.00},
+    "gpt-4o-mini": {"input": 0.15, "output": 0.60},
+    "gpt-4.1": {"input": 2.00, "output": 8.00},
+    "gpt-4.1-mini": {"input": 0.40, "output": 1.60},
+    "gpt-4.1-nano": {"input": 0.10, "output": 0.40},
+    "o3": {"input": 10.00, "output": 40.00},
+    "o4-mini": {"input": 1.10, "output": 4.40},
+    "o1": {"input": 15.00, "output": 60.00},
+    "o1-mini": {"input": 1.10, "output": 4.40},
+    # Anthropic
+    "claude-sonnet-4": {"input": 3.00, "output": 15.00},
+    "claude-sonnet-4-20250514": {"input": 3.00, "output": 15.00},
+    "claude-3.5-sonnet": {"input": 3.00, "output": 15.00},
+    "claude-opus-4": {"input": 15.00, "output": 75.00},
+    "claude-haiku-3.5": {"input": 0.80, "output": 4.00},
+}
+
+
+def estimate_cost(model: str, input_tokens: int, output_tokens: int) -> float:
+    """Estimate cost in USD for a model call."""
+    pricing = _MODEL_PRICING_PER_1M.get(
+        model, {"input": 2.50, "output": 10.00}
+    )
+    return (
+        input_tokens / 1_000_000 * pricing["input"]
+        + output_tokens / 1_000_000 * pricing["output"]
+    )
+
+
+# ── Tracer ──
+
+
+class AgentTracer:
+    """Records LLM API calls (OpenAI / Anthropic) to the Intent OS Event Store.
+
+    Each API call is recorded as a ``CapabilityInvoked`` event with
+    provider, model, tokens, cost, latency, and source agent info.
+    """
+
+    def __init__(self, store: EventStore | None = None) -> None:
+        if store is None:
+            store_dir = Path.home() / ".intent-os"
+            store_dir.mkdir(parents=True, exist_ok=True)
+            store = EventStore(str(store_dir / "events.db"))
+        self._store = store
+        self._trace_id: str | None = None
+
+    @property
+    def trace_id(self) -> str:
+        if self._trace_id is None:
+            self._trace_id = f"proxy-{uuid.uuid4().hex[:12]}"
+        return self._trace_id
+
+    def trace_call(
+        self,
+        provider: str,
+        model: str,
+        input_tokens: int,
+        output_tokens: int,
+        latency_ms: float,
+        status: str,
+        source_agent: str,
+        endpoint: str = "",
+        error_message: str | None = None,
+    ) -> str:
+        """Record one LLM API call as an Event Store event.
+
+        Returns the trace_id for later inspection.
+        """
+        total_tokens = input_tokens + output_tokens
+        cost = estimate_cost(model, input_tokens, output_tokens)
+
+        event = Event(
+            event_id=str(uuid.uuid4()),
+            trace_id=self.trace_id,
+            event_type=EventType.CAPABILITY_INVOKED,
+            timestamp=datetime.now(timezone.utc),
+            source="proxy",
+            sequence=0,
+            capability=f"llm.{provider}.{model}",
+        )
+        event.payload = {
+            "provider": provider,
+            "model": model,
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "total_tokens": total_tokens,
+            "cost_usd": round(cost, 6),
+            "latency_ms": round(latency_ms, 2),
+            "status": status,
+            "source_agent": source_agent,
+            "endpoint": endpoint,
+        }
+        if error_message:
+            event.payload["error"] = error_message
+
+        event.metrics = {
+            "latency_ms": round(latency_ms, 2),
+            "token_count": {"input": input_tokens, "output": output_tokens, "total": total_tokens},
+            "cost_usd": round(cost, 6),
+        }
+
+        self._store.save_event(event)
+        return self.trace_id
+
+
+

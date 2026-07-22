@@ -23,6 +23,7 @@ import commands.evolution
 import commands.ask
 import commands.demo
 import commands.trace
+import commands.proxy
 
 # All cmd_* functions are imported from command modules via the registry pattern below
 CMD_MAP = {
@@ -42,6 +43,7 @@ CMD_MAP = {
     "ask": commands.ask.cmd_ask,
     "demo": commands.demo.cmd_demo,
     "inspect": commands.trace.cmd_inspect,
+    "proxy": commands.proxy.cmd_proxy,
 }
 
 def build_parser() -> argparse.ArgumentParser:
@@ -234,6 +236,19 @@ def build_parser() -> argparse.ArgumentParser:
     inspect_parser.add_argument("--html", action="store_true",
                                 help="Export trace as a standalone HTML file for sharing")
     inspect_parser.set_defaults(func=CMD_MAP["inspect"])
+
+    # proxy
+    proxy_parser = subparsers.add_parser("proxy",
+        help="Start the Agent Hook proxy to record AI agent API calls")
+    proxy_sub = proxy_parser.add_subparsers(dest="proxy_action", help="Proxy actions")
+    ps = proxy_sub.add_parser("start", help="Start the proxy server")
+    ps.add_argument("--port", type=int, default=8377, help="Port (default: 8377)")
+    ps.add_argument("--host", default="127.0.0.1", help="Host (default: 127.0.0.1)")
+    ps.set_defaults(func=CMD_MAP["proxy"])
+    pst = proxy_sub.add_parser("status", help="Check if the proxy is running")
+    pst.add_argument("--port", type=int, default=8377, help="Port (default: 8377)")
+    pst.add_argument("--host", default="127.0.0.1", help="Host (default: 127.0.0.1)")
+    pst.set_defaults(func=CMD_MAP["proxy"])
 
     return parser
 
