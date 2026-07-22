@@ -1,19 +1,17 @@
 """
-Intent OS — Workflow Planner (Phase 1: Template-Based)
+Intent OS — Workflow Planner (Phase 2: Data-Driven)
 
-The Planner's job is to convert a user goal into an executable WorkflowDAG.
+The Planner converts a user goal into an executable WorkflowDAG.
 
-Phase 1 implements a template-based planner:
+It implements a data-driven planner:
   - Predefined workflow templates for common task patterns
   - Goal matching: parse a goal → find best template → instantiate
+  - Multi-plan enumeration with cost estimates via CostModel
+  - Analytics-driven template/capability ranking based on historical data
   - Produces a validated WorkflowSpec ready for execution
 
-This is NOT yet a full AI Query Optimizer (Phase 3).
-It does NOT enumerate multiple candidate plans and cost-optimize.
-Instead, it uses deterministic template matching with parameter filling.
-
-Future evolution (Phase 3+):
-  Template-based → Cost-based with plan enumeration → Probabilistic optimizer
+Phase 3+ evolution:
+  Multi-armed bandit exploration → Probabilistic query optimizer
 """
 
 from __future__ import annotations
@@ -527,7 +525,7 @@ class WorkflowPlanner:
                 for entry in (self._analytics.get_capability_rankings() or []):
                     perf[entry.get("capability", "")] = entry.get("total_runs", 0)
             except Exception:
-                pass
+                pass  # Analytics data is optional — degrade gracefully
 
         candidates: list[tuple[WorkflowTemplate, int]] = []
         for template in self._templates:
@@ -566,7 +564,7 @@ class WorkflowPlanner:
                     r = entry.get("success_rate", 0.5) or 0.0
                     perf[n] = r
             except Exception:
-                pass
+                pass  # Analytics data is optional — degrade gracefully
 
         matches: list[tuple[str, str, float]] = []
         capabilities = self._registry.list_capabilities()

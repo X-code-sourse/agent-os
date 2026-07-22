@@ -80,7 +80,7 @@ def cmd_workflow(args: Any) -> None:
                 _, registry = get_registry_store()
                 scheduler.set_registry(registry)
             except Exception:
-                pass
+                pass  # Registry is optional for simulated execution
 
         print(f"  Executing...")
         record = scheduler.execute(input_data=input_data, adapter_name=adapter_name)
@@ -89,7 +89,7 @@ def cmd_workflow(args: Any) -> None:
         try:
             save_to_event_store(record)
         except Exception:
-            pass
+            pass  # Event store is optional — execution succeeded regardless
 
         print(f"\n  Status: {record.status.value}")
         print(f"  Latency: {record.total_latency_ms:.0f}ms")

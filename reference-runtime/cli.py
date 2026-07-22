@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import logging
 import sys
 from typing import Any
 
@@ -265,10 +266,9 @@ def main() -> None:
     try:
         args.func(args)
     except Exception as exc:
+        logging.debug("Command '%s' failed", args.command, exc_info=True)
         print(f"\nError: {exc}", file=sys.stderr)
-        if args.command == "compare":
-            pass
-        else:
+        if args.command != "compare":
             sys.exit(1)
 
 

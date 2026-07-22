@@ -127,31 +127,20 @@ def setup_executor(adapters: list[str] | None = None) -> Executor:
     has_ollama = False
     adapter_classes = []
 
-    try:
-        from adapters.openai_adapter import OpenAIAdapter
-        adapter_classes.append(("openai", OpenAIAdapter))
-    except ImportError:
-        pass
-    try:
-        from adapters.anthropic_adapter import AnthropicAdapter
-        adapter_classes.append(("anthropic", AnthropicAdapter))
-    except ImportError:
-        pass
-    try:
-        from adapters.github_models_adapter import GitHubModelsAdapter
-        adapter_classes.append(("github-models", GitHubModelsAdapter))
-    except ImportError:
-        pass
-    try:
-        from adapters.openrouter_adapter import OpenRouterAdapter
-        adapter_classes.append(("openrouter", OpenRouterAdapter))
-    except ImportError:
-        pass
-    try:
-        from adapters.ollama_adapter import OllamaAdapter
-        adapter_classes.append(("ollama", OllamaAdapter))
-    except ImportError:
-        pass
+    # Optional adapter packages — gracefully degrade if not installed
+    for adapter_module, adapter_cls, adapter_name in [
+        ("adapters.openai_adapter", "OpenAIAdapter", "openai"),
+        ("adapters.anthropic_adapter", "AnthropicAdapter", "anthropic"),
+        ("adapters.github_models_adapter", "GitHubModelsAdapter", "github-models"),
+        ("adapters.openrouter_adapter", "OpenRouterAdapter", "openrouter"),
+        ("adapters.ollama_adapter", "OllamaAdapter", "ollama"),
+    ]:
+        try:
+            mod = __import__(adapter_module, fromlist=[adapter_cls])
+            cls = getattr(mod, adapter_cls)
+            adapter_classes.append((adapter_name, cls))
+        except ImportError:
+            pass  # Optional dependency not installed — skip
 
     for name, adapter_cls in adapter_classes:
         # Skip cloud adapters whose credentials aren't set
@@ -168,7 +157,7 @@ def setup_executor(adapters: list[str] | None = None) -> Executor:
                         executor.register_adapter(adapter.name, adapter)
                         has_ollama = True
                 except Exception:
-                    pass
+                    pass  # Ollama not running — skip local adapter
             else:
                 executor.register_adapter(adapter.name, adapter)
         except Exception as exc:

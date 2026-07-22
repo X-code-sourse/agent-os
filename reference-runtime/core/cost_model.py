@@ -304,7 +304,7 @@ class CostModel:
                     cap_stats = entry
                     break
         except Exception:
-            pass
+            pass  # Analytics data is optional — estimate without it
 
         # Gather runtime-level stats for this adapter
         runtime_stats = None
@@ -315,7 +315,7 @@ class CostModel:
                     runtime_stats = entry
                     break
         except Exception:
-            pass
+            pass  # Analytics data is optional — estimate without it
 
         # Need at least one source of data
         if cap_stats is None and runtime_stats is None:

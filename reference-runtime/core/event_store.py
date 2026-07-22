@@ -159,7 +159,7 @@ class EventStore:
             try:
                 conn.execute(idx)
             except sqlite3.OperationalError:
-                pass
+                pass  # Index already exists — idempotent init
 
         # Set schema version
         conn.execute(

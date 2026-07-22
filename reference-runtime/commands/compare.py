@@ -118,7 +118,7 @@ def cmd_compare(args: Any) -> None:
         try:
             save_to_event_store(record)
         except Exception:
-            pass
+            pass  # Non-critical — comparison results are already displayed
 
     # Save records
     if args.save:

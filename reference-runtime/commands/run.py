@@ -95,7 +95,7 @@ def cmd_run(args: argparse.Namespace) -> None:
             try:
                 val = json.loads(val)
             except (json.JSONDecodeError, TypeError):
-                pass
+                pass  # Not JSON — keep as plain string
             input_data[key.strip()] = val
 
     # 2b. --input / -i JSON string (overrides --param)
@@ -190,7 +190,7 @@ def cmd_run(args: argparse.Namespace) -> None:
     try:
         save_to_event_store(record)
     except Exception:
-        pass
+        pass  # Non-critical — execution results already displayed
 
     if args.save:
         save_path = save_execution_record(record, args.save)
