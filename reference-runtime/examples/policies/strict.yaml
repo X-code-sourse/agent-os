@@ -1,0 +1,25 @@
+# Intent OS — Strict Policy
+#
+# Locked down: designed for production or regulated environments.
+# Only low-risk capabilities auto-pass. Medium and above require
+# human review. Any capability matching "financial.*" is explicitly
+# elevated to critical risk, ensuring it always triggers review.
+# No blanket allow — every permission must be explicitly justified.
+#
+# Apply:  intent-os security policy apply examples/policies/strict.yaml
+
+policy_id: strict-default
+description: "Strict policy for production environments"
+target_patterns:
+  - "*"
+risk_overrides:
+  "financial.*": "critical"
+  "email.*": "high"
+  "payment.*": "critical"
+review_rules:
+  require_review_for:
+    - medium
+    - high
+    - critical
+version: 1
+enabled: true

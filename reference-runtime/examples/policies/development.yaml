@@ -1,0 +1,17 @@
+# Intent OS — Development Policy
+#
+# Permissive: designed for local development with Ollama.
+# Allows all capabilities automatically except critical-risk ones,
+# which are queued for human review.
+#
+# Apply:  intent-os security policy apply examples/policies/development.yaml
+
+policy_id: dev-default
+description: "Permissive policy for local development"
+target_patterns:
+  - "*"
+review_rules:
+  require_review_for:
+    - critical
+version: 1
+enabled: true

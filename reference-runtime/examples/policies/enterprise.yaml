@@ -1,0 +1,21 @@
+# Intent OS — Enterprise Policy
+#
+# Balanced: designed for team use in a shared environment.
+# Medium-risk capabilities auto-pass. High-risk requires review.
+# Critical-risk is blocked entirely. File-related capabilities
+# are elevated one risk level for extra caution.
+#
+# Apply:  intent-os security policy apply examples/policies/enterprise.yaml
+
+policy_id: enterprise-default
+description: "Balanced policy for team use"
+target_patterns:
+  - "*"
+risk_overrides:
+  "file.*": "high"
+  "process.*": "critical"
+review_rules:
+  require_review_for:
+    - critical
+version: 1
+enabled: true
