@@ -20,7 +20,7 @@ from typing import Any, Optional
 from core.llm_provider import ProviderFactory
 from core.ask_preferences import PreferencesStore
 from core.registry import CapabilityRegistry
-from core.executor import Executor
+from core.executor import Executor, ExecutionError
 from core.parser import parse_manifest
 from core.models import (
     CapabilityManifest,
