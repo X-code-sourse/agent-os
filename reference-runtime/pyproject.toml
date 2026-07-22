@@ -6,12 +6,13 @@ build-backend = "setuptools.build_meta"
 name = "intent-os"
 version = "0.4.0"
 description = "An open interoperability layer for AI capabilities, workflows, and execution"
-readme = {file = "README.md", content-type = "text/markdown"}
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
 authors = [
     {name = "Intent OS Project"},
 ]
-license = {text = "MIT"}
-requires-python = ">=3.10"
+keywords = ["ai", "interoperability", "llm", "capability", "workflow", "manifest"]
 dependencies = [
     "pyyaml>=6.0",
     "requests>=2.28",
@@ -20,7 +21,6 @@ classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
-    "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
@@ -34,17 +34,23 @@ ask = ["openai>=1.0.0", "anthropic>=0.30.0"]
 all = ["ask", "requests>=2.28"]
 
 [project.urls]
-Homepage = "https://github.com/intent-os/intent-os"
+Homepage = "https://github.com/X-code-sourse/intentos"
 Documentation = "https://intent-os.org"
+Source = "https://github.com/X-code-sourse/intentos"
+BugTracker = "https://github.com/X-code-sourse/intentos/issues"
 
 [project.scripts]
 intent-os = "cli:main"
+
+[tool.setuptools]
+py-modules = ["cli", "mcp_server"]
+
+[tool.setuptools.packages.find]
+include = ["core*", "adapters*", "tools*", "commands*"]
+exclude = ["tests*"]
 
 [tool.pytest.ini_options]
 markers = [
     "ask_e2e: end-to-end tests for the Ask command that connect to a real LLM provider",
 ]
 
-[tool.setuptools.packages.find]
-include = ["core*", "adapters*", "tools*", "commands*"]
-exclude = ["tests*"]
