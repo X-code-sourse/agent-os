@@ -232,6 +232,7 @@ class WorkflowTask:
     capability: str  # name@version
     input: dict[str, Any] = field(default_factory=dict)
     description: str | None = None
+    skip_if: str | None = None  # Condition expression; if true, task is skipped
 
     # Runtime state (set during execution, not serialized in Spec)
     status: TaskStatus = TaskStatus.PENDING
@@ -244,12 +245,15 @@ class WorkflowTask:
 
     def to_spec_dict(self) -> dict[str, Any]:
         """Serialize the spec portion (no runtime state)."""
-        return {
+        result: dict[str, Any] = {
             "id": self.id,
             "capability": self.capability,
             "input": self.input,
             "description": self.description,
         }
+        if self.skip_if:
+            result["skip_if"] = self.skip_if
+        return result
 
 
 @dataclass
@@ -264,13 +268,17 @@ class WorkflowEdge:
     from_task: str
     to_task: str
     data: dict[str, Any] | None = None  # Optional explicit data mapping
+    condition: str | None = None  # Condition expression; if false, edge is skipped
 
     def to_dict(self) -> dict[str, str | dict | None]:
-        return {
+        result: dict[str, str | dict | None] = {
             "from": self.from_task,
             "to": self.to_task,
             "data": self.data,
         }
+        if self.condition:
+            result["condition"] = self.condition
+        return result
 
 
 @dataclass
@@ -521,6 +529,91 @@ class WorkflowDAG:
             if dep.status != TaskStatus.SUCCEEDED:
                 return False
         return True
+
+    # ── Condition Evaluation (Adaptive Execution Graph) ──
+
+    def evaluate_condition(
+        self,
+        condition: str | None,
+        task_outputs: dict[str, Any],
+        input_data: dict[str, Any] | None = None,
+    ) -> bool:
+        """Evaluate a condition expression against current task outputs.
+
+        If condition is None or empty, returns True (always pass).
+        This ensures backward compatibility — workflows without conditions
+        are unaffected.
+
+        Args:
+            condition: Condition expression string or None.
+            task_outputs: Dict of {task_id: output} from completed tasks.
+            input_data: Optional workflow input data.
+
+        Returns:
+            True if condition is met (or no condition), False otherwise.
+        """
+        if not condition:
+            return True
+        from core.conditions import evaluate_condition as _eval
+        return _eval(condition, task_outputs, input_data)
+
+    def get_outbound_edges(self, task_id: str) -> list[Any]:
+        """Get all outbound edges from a task."""
+        return [e for e in self.spec.edges if e.from_task == task_id]
+
+    def get_effective_dependents(
+        self,
+        task_id: str,
+        task_outputs: dict[str, Any],
+        input_data: dict[str, Any] | None = None,
+    ) -> list[Any]:
+        """Get downstream tasks enabled by this task's completion,
+        filtering by condition expressions on outbound edges.
+
+        An edge with a condition that evaluates to False is pruned.
+        Unless another edge enables the same downstream task, it won't
+        be scheduled.
+        """
+        enabled: list[Any] = []
+        for edge in self.get_outbound_edges(task_id):
+            if self.evaluate_condition(edge.condition, task_outputs, input_data):
+                task = self._task_map.get(edge.to_task)
+                if task:
+                    enabled.append(task)
+        return enabled
+
+    def should_skip_task(
+        self,
+        task_id: str,
+        task_outputs: dict[str, Any],
+        input_data: dict[str, Any] | None = None,
+    ) -> bool:
+        """Check if a task should be skipped due to its skip_if condition."""
+        task = self._task_map.get(task_id)
+        if not task or not task.skip_if:
+            return False
+        return self.evaluate_condition(task.skip_if, task_outputs, input_data)
+
+    def has_satisfied_inbound_path(
+        self,
+        task_id: str,
+        task_outputs: dict[str, Any],
+        input_data: dict[str, Any] | None = None,
+    ) -> bool:
+        """Check if at least one inbound edge to a task has a satisfied condition.
+
+        A task with no inbound edges (root task) always returns True.
+        An edge with no condition always passes.
+        This prevents scheduling a task whose conditional data paths
+        have all been blocked by failing edge conditions.
+        """
+        inbound = [e for e in self.spec.edges if e.to_task == task_id]
+        if not inbound:
+            return True  # Root task
+        return any(
+            self.evaluate_condition(e.condition, task_outputs, input_data)
+            for e in inbound
+        )
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize DAG info for debugging / observability."""

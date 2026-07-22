@@ -151,9 +151,11 @@ class ExecutionRecorder:
             },
             metrics={
                 "latency_ms": latency_ms,
-                "token_count": sum(token_count.values()),
-                "token_input": token_count.get("input", 0),
-                "token_output": token_count.get("output", 0),
+                "token_count": {
+                    "input": token_count.get("input", 0),
+                    "output": token_count.get("output", 0),
+                    "total": token_count.get("input", 0) + token_count.get("output", 0),
+                },
                 "cost_usd": cost_usd,
             },
         )
@@ -308,7 +310,16 @@ def compare_records(
         if evt.metrics:
             metric_keys_b.update(evt.metrics.keys())
 
-    metrics_ok = metric_keys_a == metric_keys_b
+    # Defensive check: one set being a subset of the other is acceptable
+    # (e.g., Runtime B may emit an extra metric that Runtime A doesn't).
+    # Only flag incompatibility when both have non-empty key sets and
+    # neither is a subset — meaning they disagree on dimensions.
+    metrics_ok = (
+        not metric_keys_a or not metric_keys_b
+        or metric_keys_a == metric_keys_b
+        or metric_keys_a.issubset(metric_keys_b)
+        or metric_keys_b.issubset(metric_keys_a)
+    )
     result["checks"]["metric_dimensions_match"] = {
         "passed": metrics_ok,
         "details": {

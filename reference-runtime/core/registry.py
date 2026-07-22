@@ -23,6 +23,7 @@ import yaml
 
 from core.models import CapabilityManifest
 from core.parser import parse_manifest
+from core.search import SearchIndex
 
 
 class RegistryError(Exception):
@@ -50,6 +51,10 @@ class CapabilityRegistry:
         # {name: [version, ...]}
         self._versions: dict[str, list[str]] = {}
         self._db_path: Path | None = None
+
+        # Semantic search index (lazy rebuild on first search after changes)
+        self._search_index = SearchIndex()
+        self._search_dirty = True
 
         # Initialize SQLite if a path is provided
         if db_path:
@@ -190,6 +195,9 @@ class CapabilityRegistry:
                 self._versions[manifest.name].append(manifest.version)
                 self._versions[manifest.name].sort()
 
+            # Invalidate search index
+            self._search_dirty = True
+
             # Persist to SQLite
             self._save_to_db(manifest)
 
@@ -221,6 +229,9 @@ class CapabilityRegistry:
                     self._manifests.pop(key, None)
                     self._remove_from_db(name, ver)
                 self._versions.pop(name, None)
+
+            # Invalidate search index
+            self._search_dirty = True
 
     def get(self, name: str, version: str | None = None) -> CapabilityManifest | None:
         """
@@ -285,6 +296,56 @@ class CapabilityRegistry:
         """Return the number of registered capabilities."""
         with self._lock:
             return len(self._manifests)
+
+    # ── Semantic Search ──
+
+    def _rebuild_search_index(self) -> None:
+        """Rebuild the in-memory search index from current capabilities.
+
+        Called lazily by find_by_text() when the index is dirty.
+        Thread-safe: caller should hold self._lock.
+        """
+        docs = [
+            {
+                "id": manifest.id,
+                "name": manifest.name,
+                "description": manifest.metadata.description or "",
+                "tags": manifest.metadata.tags or [],
+                "publisher": manifest.metadata.publisher or "",
+            }
+            for manifest in self._manifests.values()
+        ]
+        self._search_index.build(docs)
+        self._search_dirty = False
+
+    def find_by_text(
+        self,
+        query: str,
+        limit: int = 10,
+        min_score: float = 0.0,
+    ) -> list[dict[str, Any]]:
+        """Search capabilities by free-text query with semantic ranking.
+
+        Uses TF-IDF vectorization and cosine similarity — no external
+        dependencies, no API calls, fully offline.
+
+        Args:
+            query: Free-text search query.
+            limit: Maximum number of results.
+            min_score: Minimum similarity score threshold (0.0–1.0).
+
+        Returns:
+            List of result dicts, each with:
+              - capability: capability summary dict
+              - score: similarity score (0.0–1.0)
+            Sorted by descending score. Empty list if no matches.
+        """
+        with self._lock:
+            if self._search_dirty:
+                self._rebuild_search_index()
+            return self._search_index.search(
+                query=query, limit=limit, min_score=min_score,
+            )
 
     def save_snapshot(self, path: str | Path) -> Path:
         """Export all registered capabilities as a JSON snapshot file."""

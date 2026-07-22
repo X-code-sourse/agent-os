@@ -83,6 +83,7 @@ class Scheduler:
         self._completed_order: list[str] = []
         self._compensation_events: list[dict[str, Any]] = []
         self._registry: Any = None
+        self._input_data: dict[str, Any] = {}  # For condition evaluation
 
         # Callbacks
         self._on_task_complete: Callable | None = None
@@ -133,6 +134,7 @@ class Scheduler:
             ExecutionRecord with all workflow events.
         """
         input_data = input_data or {}
+        self._input_data = input_data
         self._status = WorkflowStatus.RUNNING
 
         # Record workflow start
@@ -264,6 +266,17 @@ class Scheduler:
             task.status = TaskStatus.BLOCKED
             return
 
+        # Check inbound edge conditions (adaptive execution graph)
+        if not self._dag.has_satisfied_inbound_path(task.id, self._task_outputs, self._input_data):
+            task.status = TaskStatus.BLOCKED
+            self._recorder.record(
+                event_type=EventType.TASK_SKIPPED,
+                source="scheduler",
+                task_id=task.id,
+                payload={"reason": "No inbound edge condition satisfied"},
+            )
+            return
+
         # Check failure propagation
         if self._should_skip_due_to_failure(task):
             task.status = TaskStatus.SKIPPED
@@ -272,6 +285,17 @@ class Scheduler:
                 source="scheduler",
                 task_id=task.id,
                 payload={"reason": "Upstream task failed"},
+            )
+            return
+
+        # Check adaptive skip condition (Phase 2)
+        if self._dag.should_skip_task(task.id, self._task_outputs, self._input_data):
+            task.status = TaskStatus.SKIPPED
+            self._recorder.record(
+                event_type=EventType.TASK_SKIPPED,
+                source="scheduler",
+                task_id=task.id,
+                payload={"reason": f"skip_if condition met: {task.skip_if}"},
             )
             return
 

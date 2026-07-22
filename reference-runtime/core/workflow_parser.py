@@ -135,6 +135,7 @@ def parse_workflow_yaml(source: str | Path) -> WorkflowSpec:
             capability=capability,
             input=task_input,
             description=raw_task.get("description"),
+            skip_if=raw_task.get("skip_if"),
         ))
 
     # ── Parse Edges ──
@@ -173,6 +174,7 @@ def parse_workflow_yaml(source: str | Path) -> WorkflowSpec:
             from_task=from_task,
             to_task=to_task,
             data=raw_edge.get("data"),
+            condition=raw_edge.get("condition"),
         ))
 
     # ── Parse Semantics ──

@@ -192,28 +192,10 @@ class Executor:
             )
             status = ExecutionStatus.FAILURE
 
-            if own_recorder:
-                return recorder.build_record(
-                    manifest_name=manifest.name,
-                    manifest_version=manifest.version,
-                    runtime_id=adapter.name if hasattr(adapter, 'name') else adapter_name or "unknown",
-                    adapter=type(adapter).__name__,
-                    adapter_version=getattr(adapter, 'version', '0.1.0'),
-                    input_data=input_data,
-                    output_data=None,
-                    status=status,
-                    error=str(exc),
-                )
-            return recorder.build_record(
-                manifest_name=manifest.name,
-                manifest_version=manifest.version,
-                runtime_id=adapter.name if hasattr(adapter, 'name') else adapter_name or "unknown",
-                adapter=type(adapter).__name__,
-                adapter_version=getattr(adapter, 'version', '0.1.0'),
-                input_data=input_data,
-                output_data=None,
-                status=status,
-                error=str(exc),
+            return self._build_execution_record(
+                recorder, manifest, adapter, adapter_name,
+                input_data=input_data, output_data=None,
+                status=status, error=str(exc),
             )
 
         elapsed_ms = int((time.monotonic() - start_time) * 1000)
@@ -253,30 +235,43 @@ class Executor:
             error_msg = None
 
         # Build and return the execution record
-        if own_recorder:
-            record = recorder.build_record(
-                manifest_name=manifest.name,
-                manifest_version=manifest.version,
-                runtime_id=getattr(adapter, 'name', adapter_name or "unknown"),
-                adapter=type(adapter).__name__,
-                adapter_version=getattr(adapter, 'version', '0.1.0'),
-                input_data=input_data,
-                output_data=output_data,
-                status=status,
-                error=error_msg,
-            )
-            return record
+        return self._build_execution_record(
+            recorder, manifest, adapter, adapter_name,
+            input_data=input_data, output_data=output_data,
+            status=status, error=error_msg,
+        )
+
+    def _build_execution_record(
+        self,
+        recorder: Any,
+        manifest: CapabilityManifest,
+        adapter: Any,
+        adapter_name: str | None,
+        *,
+        input_data: dict[str, Any],
+        output_data: dict[str, Any] | None,
+        status: ExecutionStatus,
+        error: str | None,
+    ) -> ExecutionRecord:
+        """Build an ExecutionRecord from adapter and execution data.
+
+        Extracts adapter metadata and delegates to recorder.build_record(),
+        eliminating repetitive adapter-info extraction across success/failure paths.
+        """
+        runtime_id = getattr(adapter, 'name', adapter_name or "unknown")
+        adapter_type = type(adapter).__name__
+        adapter_ver = getattr(adapter, 'version', '0.1.0')
 
         return recorder.build_record(
             manifest_name=manifest.name,
             manifest_version=manifest.version,
-            runtime_id=getattr(adapter, 'name', adapter_name or "unknown"),
-            adapter=type(adapter).__name__,
-            adapter_version=getattr(adapter, 'version', '0.1.0'),
+            runtime_id=runtime_id,
+            adapter=adapter_type,
+            adapter_version=adapter_ver,
             input_data=input_data,
             output_data=output_data,
             status=status,
-            error=error_msg,
+            error=error,
         )
 
     def _select_adapter(
