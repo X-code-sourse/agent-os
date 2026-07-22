@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "intent-os"
-version = "0.2.0"
+version = "0.3.0"
 description = "An open interoperability layer for AI capabilities, workflows, and execution"
 readme = {file = "README.md", content-type = "text/markdown"}
 authors = [
@@ -39,5 +39,5 @@ Documentation = "https://intent-os.org"
 intent-os = "cli:main"
 
 [tool.setuptools.packages.find]
-include = ["core*", "adapters*", "tools*"]
+include = ["core*", "adapters*", "tools*", "commands*"]
 exclude = ["tests*"]

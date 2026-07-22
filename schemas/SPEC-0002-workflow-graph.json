@@ -1,0 +1,150 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://intent-os.org/schemas/workflow-graph.json",
+  "title": "Intent OS Workflow Graph",
+  "description": "Standard format for composing capabilities into executable workflows (SPEC-0002).",
+  "type": "object",
+  "required": ["kind", "metadata", "spec"],
+  "properties": {
+    "kind": {
+      "type": "string",
+      "enum": ["Workflow"],
+      "description": "Must equal 'Workflow'."
+    },
+    "metadata": {
+      "type": "object",
+      "required": ["name", "version"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "version": {
+          "type": "string",
+          "pattern": "^\\d+\\.\\d+\\.\\d+(-[a-zA-Z0-9.]+)?$"
+        },
+        "description": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "spec": {
+      "type": "object",
+      "required": ["tasks", "edges", "semantics"],
+      "properties": {
+        "goal": { "type": "string" },
+        "tasks": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["id", "capability", "input"],
+            "properties": {
+              "id": { "type": "string", "minLength": 1 },
+              "capability": { "type": "string", "description": "Capability reference (name@version)." },
+              "description": { "type": "string" },
+              "input": { "type": "object" }
+            },
+            "additionalProperties": false
+          }
+        },
+        "edges": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["from", "to"],
+            "properties": {
+              "from": { "type": "string" },
+              "to": { "type": "string" },
+              "data": { "type": "object" }
+            },
+            "additionalProperties": false
+          }
+        },
+        "semantics": {
+          "type": "object",
+          "properties": {
+            "retry": { "$ref": "#/$defs/RetryPolicy" },
+            "timeout": { "$ref": "#/$defs/TimeoutPolicy" },
+            "failure": { "$ref": "#/$defs/FailurePolicy" },
+            "parallel": { "$ref": "#/$defs/ParallelPolicy" },
+            "lifecycle": { "$ref": "#/$defs/LifecyclePolicy" },
+            "compensation": { "$ref": "#/$defs/CompensationPolicy" },
+            "checkpoint": { "$ref": "#/$defs/CheckpointPolicy" }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "RetryPolicy": {
+      "type": "object",
+      "properties": {
+        "strategy": { "type": "string", "enum": ["fixed", "exponential", "none"], "default": "exponential" },
+        "max_attempts": { "type": "integer", "minimum": 1, "default": 3 },
+        "initial_interval": { "type": "string", "default": "1s" },
+        "max_interval": { "type": "string", "default": "30s" },
+        "backoff_multiplier": { "type": "number", "default": 2 },
+        "retryable_errors": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "TimeoutPolicy": {
+      "type": "object",
+      "properties": {
+        "task": { "type": "string", "default": "30s" },
+        "workflow": { "type": "string", "default": "300s" },
+        "on_timeout": { "type": "string", "enum": ["fail", "skip", "retry"], "default": "fail" },
+        "retry_on_timeout": { "type": "boolean", "default": true }
+      },
+      "additionalProperties": false
+    },
+    "FailurePolicy": {
+      "type": "object",
+      "properties": {
+        "propagation": { "type": "string", "enum": ["immediate", "deferred", "none"], "default": "deferred" },
+        "cancel_dependents": { "type": "boolean", "default": true },
+        "continue_independents": { "type": "boolean", "default": true },
+        "max_failures": { "type": "integer", "minimum": 1, "default": 1 }
+      },
+      "additionalProperties": false
+    },
+    "ParallelPolicy": {
+      "type": "object",
+      "properties": {
+        "max_concurrency": { "type": "integer", "minimum": 0, "default": 0 },
+        "strategy": { "type": "string", "enum": ["task_parallel", "sequential"], "default": "task_parallel" },
+        "merge_strategy": { "type": "string", "enum": ["collect", "merge", "first_complete"], "default": "collect" }
+      },
+      "additionalProperties": false
+    },
+    "LifecyclePolicy": {
+      "type": "object",
+      "properties": {
+        "task_init": { "type": "string", "enum": ["on_demand", "eager"], "default": "on_demand" },
+        "cleanup": { "type": "string", "enum": ["on_complete", "never"], "default": "on_complete" },
+        "caching": { "type": "string", "enum": ["allowed", "disabled"], "default": "allowed" }
+      },
+      "additionalProperties": false
+    },
+    "CompensationPolicy": {
+      "type": "object",
+      "properties": {
+        "strategy": { "type": "string", "enum": ["rollback", "compensate", "none"], "default": "none" },
+        "order": { "type": "string", "enum": ["forward", "reverse"], "default": "reverse" }
+      },
+      "additionalProperties": false
+    },
+    "CheckpointPolicy": {
+      "type": "object",
+      "properties": {
+        "interval": { "type": "string", "enum": ["task", "step", "never"], "default": "never" },
+        "store": { "type": "string", "default": "event_store" },
+        "resume": { "type": "string", "enum": ["auto", "manual"], "default": "auto" }
+      },
+      "additionalProperties": false
+    }
+  }
+}

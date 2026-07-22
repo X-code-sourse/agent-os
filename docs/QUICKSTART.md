@@ -7,16 +7,19 @@ Get started with Intent OS in 5 minutes. No API key required — we'll use Ollam
 - Python 3.10+
 - [Ollama](https://ollama.com) (for local execution without API keys)
 
-## Step 1: Install
+## Step 1: Install Intent OS
 
 ```bash
+# Install the CLI and core runtime
 pip install intent-os
-```
 
-Or install with all extras:
-
-```bash
+# Or install with all extras (OpenAI + Anthropic adapters)
 pip install "intent-os[all]"
+
+# Install from source
+git clone https://github.com/X-code-sourse/intentos.git
+cd intent-os/reference-runtime
+pip install -e .
 ```
 
 ## Step 2: Start Ollama

@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://intent-os.org/schemas/event-schema.json",
+  "title": "Intent OS Event Schema",
+  "description": "Standard format for recording AI execution events (SPEC-0003).",
+  "type": "object",
+  "required": ["event_id", "event_type", "trace_id", "timestamp", "source", "sequence"],
+  "properties": {
+    "spec_version": { "type": "string", "default": "1.0" },
+    "event_id": { "type": "string", "description": "Globally unique UUID v4." },
+    "event_type": {
+      "type": "string",
+      "enum": [
+        "TaskStarted", "CapabilityInvoked", "TaskCompleted", "TaskFailed",
+        "TaskRetried", "TaskSkipped", "TaskCancelled",
+        "WorkflowStarted", "WorkflowCompleted", "WorkflowFailed",
+        "CostAccumulated", "ReviewRequired", "ReviewCompleted",
+        "RuntimeRegistered", "CapabilityRegistered", "PolicyEvaluated", "ResourceWarning",
+        "PlanGenerated", "PlanDeviation", "SuggestionGenerated",
+        "SuggestionAccepted", "SuggestionRejected"
+      ]
+    },
+    "trace_id": { "type": "string", "description": "Execution trace UUID." },
+    "timestamp": { "type": "string", "format": "date-time", "description": "ISO 8601 with timezone." },
+    "source": { "type": "string", "description": "Component that emitted the event (e.g., executor, planner)." },
+    "sequence": { "type": "integer", "minimum": 0, "description": "Monotonic sequence within trace." },
+    "workflow_id": { "type": ["string", "null"], "description": "Parent workflow UUID or null." },
+    "task_id": { "type": ["string", "null"], "description": "Task identifier or null." },
+    "capability": { "type": ["string", "null"], "description": "Capability identifier (name@version)." },
+    "runtime": { "type": "string", "description": "Runtime identifier (e.g., openai, anthropic)." },
+    "adapter_version": { "type": "string", "description": "Adapter implementation version." },
+    "payload": {
+      "type": "object",
+      "description": "Event-specific data."
+    },
+    "metrics": {
+      "type": "object",
+      "description": "Performance metrics.",
+      "properties": {
+        "latency_ms": { "type": "integer", "minimum": 0 },
+        "token_count": {
+          "type": "object",
+          "properties": {
+            "input": { "type": "integer", "minimum": 0 },
+            "output": { "type": "integer", "minimum": 0 },
+            "total": { "type": "integer", "minimum": 0 }
+          },
+          "required": ["input", "output", "total"]
+        },
+        "cost_usd": { "type": "number", "minimum": 0 },
+        "retry_count": { "type": "integer", "minimum": 0 },
+        "cache_hit": { "type": ["boolean", "null"] },
+        "data_transfer_bytes": { "type": ["integer", "null"], "minimum": 0 }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

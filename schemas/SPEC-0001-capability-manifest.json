@@ -1,0 +1,131 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://intent-os.org/schemas/capability-manifest.json",
+  "title": "Intent OS Capability Manifest",
+  "description": "Standard format for describing an AI Capability (SPEC-0001).",
+  "type": "object",
+  "required": ["kind", "metadata", "spec"],
+  "properties": {
+    "kind": {
+      "type": "string",
+      "description": "Must equal 'Capability'.",
+      "enum": ["Capability"]
+    },
+    "metadata": {
+      "type": "object",
+      "required": ["name", "version"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Unique capability name. Convention: {domain}-{action}.",
+          "pattern": "^[a-zA-Z][a-zA-Z0-9_-]*$",
+          "minLength": 1
+        },
+        "version": {
+          "type": "string",
+          "description": "Semantic versioning (MAJOR.MINOR.PATCH).",
+          "pattern": "^\\d+\\.\\d+\\.\\d+(-[a-zA-Z0-9.]+)?$"
+        },
+        "publisher": {
+          "type": "string",
+          "description": "Publisher identifier (reverse domain notation)."
+        },
+        "digest": {
+          "type": "string",
+          "description": "SHA-256 content hash for integrity verification."
+        },
+        "description": {
+          "type": "string",
+          "description": "Human-readable description of what the capability does."
+        },
+        "tags": {
+          "type": "array",
+          "description": "Keywords for discovery and categorization.",
+          "items": { "type": "string" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "spec": {
+      "type": "object",
+      "required": ["input", "output"],
+      "properties": {
+        "input": {
+          "type": "object",
+          "description": "Input contract.",
+          "minProperties": 1,
+          "propertyNames": {
+            "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$"
+          }
+        },
+        "output": {
+          "type": "object",
+          "description": "Output contract.",
+          "minProperties": 1,
+          "propertyNames": {
+            "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$"
+          }
+        },
+        "requirements": {
+          "type": "object",
+          "properties": {
+            "models": {
+              "type": "array",
+              "description": "List of compatible model identifiers.",
+              "items": { "type": "string" }
+            },
+            "tools": {
+              "type": "array",
+              "description": "List of required tool capabilities.",
+              "items": { "type": "string" }
+            },
+            "min_context": {
+              "type": "integer",
+              "description": "Minimum context window length in tokens.",
+              "minimum": 1024
+            }
+          },
+          "additionalProperties": false
+        },
+        "security": {
+          "type": "object",
+          "properties": {
+            "risk": {
+              "type": "string",
+              "enum": ["low", "medium", "high", "critical"],
+              "default": "low"
+            },
+            "network": {
+              "type": "boolean",
+              "default": false,
+              "description": "Does this capability make network calls?"
+            },
+            "data_access": {
+              "type": "boolean",
+              "default": false,
+              "description": "Does this access user/organization data?"
+            },
+            "require_approval": {
+              "type": "boolean",
+              "default": false,
+              "description": "Does this require human approval?"
+            }
+          },
+          "additionalProperties": false
+        },
+        "cost": {
+          "type": "object",
+          "description": "Cost estimation hints.",
+          "properties": {
+            "estimated_tokens": { "type": "string" },
+            "estimated_latency": { "type": "string" },
+            "pricing_hint": { "type": "string" }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}
