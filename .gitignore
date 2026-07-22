@@ -17,3 +17,7 @@ build/
 
 # AI session context — not for public repo
 CLAUDE.md
+
+# Legacy build files — pyproject.toml is canonical
+reference-runtime/requirements.txt
+reference-runtime/setup.py
