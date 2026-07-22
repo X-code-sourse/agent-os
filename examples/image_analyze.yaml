@@ -1,0 +1,106 @@
+kind: Capability
+metadata:
+  name: image_analyze
+  version: 1.0.0
+  publisher: intent-os.org
+  description: "Analyzes images from a URL, returning a natural-language description, relevant tags, and optional confidence scores"
+  tags:
+    - vision
+    - image-analysis
+    - captioning
+    - multi-modal
+    - tagging
+    - vqa
+
+spec:
+  input:
+    image_url:
+      type: string
+      description: "Public URL of the image to analyze"
+      format: uri
+      pattern: "^https?://.*\\.(png|jpg|jpeg|gif|webp|svg)(\\?.*)?$"
+      max_length: 2048
+    question:
+      type: string
+      description: "Optional natural-language question to answer about the image (visual question answering)"
+      optional: true
+      max_length: 1000
+    detail:
+      type: string
+      description: "Level of detail in the description"
+      enum: ["low", "high"]
+      default: "high"
+      optional: true
+    max_tags:
+      type: integer
+      description: "Maximum number of tags to return"
+      default: 10
+      minimum: 1
+      maximum: 50
+      optional: true
+
+  output:
+    description:
+      type: string
+      description: "Natural-language description of the image contents"
+    tags:
+      type: array
+      description: "Relevant tags or labels describing the image"
+      items:
+        type: string
+      min_items: 1
+    confidence:
+      type: number
+      description: "Overall confidence score for the analysis (0.0 to 1.0)"
+      optional: true
+      minimum: 0.0
+      maximum: 1.0
+    objects:
+      type: array
+      description: "Detected objects in the image with bounding box hints"
+      optional: true
+      items:
+        type: object
+        properties:
+          label:
+            type: string
+            description: "Object label"
+          confidence:
+            type: number
+            description: "Detection confidence (0.0 to 1.0)"
+    text_detected:
+      type: string
+      description: "Any text recognized in the image via OCR"
+      optional: true
+    answer:
+      type: string
+      description: "Answer to the user's question about the image. Only present when a question was asked."
+      optional: true
+    dominant_colors:
+      type: array
+      description: "Dominant color palette extracted from the image"
+      optional: true
+      items:
+        type: string
+        description: "Hex color code (e.g. '#4A90D9')"
+        pattern: "^#[0-9A-Fa-f]{6}$"
+
+  requirements:
+    models:
+      - claude-sonnet-4
+      - gpt-4o
+      - gemini-2.5-pro
+    tools:
+      - url-fetch
+    min_context: 64000
+
+  security:
+    risk: medium
+    network: true
+    data_access: false
+    require_approval: false
+
+  cost:
+    estimated_tokens: "~500 per image + output tokens"
+    estimated_latency: "< 8s per image"
+    pricing_hint: "vision tokens apply"

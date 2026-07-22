@@ -1,0 +1,135 @@
+kind: Capability
+metadata:
+  name: code_review
+  version: 2.1.0
+  publisher: intent-os.org
+  description: "Analyzes source code for bugs, security vulnerabilities, style issues, and provides a structured review report"
+  tags:
+    - code-analysis
+    - static-analysis
+    - linting
+    - security
+    - dev-tools
+
+spec:
+  input:
+    code:
+      type: string
+      description: "The source code to review"
+      min_length: 1
+      max_length: 50000
+    language:
+      type: string
+      description: "Programming language of the code"
+      enum:
+        - python
+        - javascript
+        - typescript
+        - rust
+        - go
+        - java
+        - cpp
+        - ruby
+        - sql
+        - bash
+      examples:
+        - "python"
+        - "typescript"
+    config:
+      type: object
+      description: "Review configuration overrides"
+      optional: true
+      properties:
+        severity_threshold:
+          type: string
+          enum: ["info", "warning", "error", "critical"]
+          default: "info"
+        max_issues:
+          type: integer
+          default: 50
+        focus_areas:
+          type: array
+          items:
+            type: string
+            enum:
+              - correctness
+              - security
+              - performance
+              - style
+              - maintainability
+
+  output:
+    issues:
+      type: array
+      description: "List of identified code issues"
+      items:
+        type: object
+        properties:
+          line:
+            type: integer
+            description: "Line number where the issue occurs"
+          column:
+            type: integer
+            description: "Column offset (optional)"
+            optional: true
+          severity:
+            type: string
+            enum: ["info", "warning", "error", "critical"]
+          category:
+            type: string
+            enum: ["correctness", "security", "performance", "style", "maintainability", "best-practice"]
+          rule_id:
+            type: string
+            description: "Identifier for the matching rule (e.g. 'no-unused-vars')"
+            optional: true
+          message:
+            type: string
+            description: "Human-readable description of the issue"
+          suggestion:
+            type: string
+            description: "Suggested fix or remediation"
+            optional: true
+    summary:
+      type: string
+      description: "High-level summary of review findings (2-5 sentences)"
+    score:
+      type: number
+      description: "Code quality score from 0.0 (worst) to 10.0 (best)"
+      optional: true
+      minimum: 0.0
+      maximum: 10.0
+    stats:
+      type: object
+      description: "Aggregate statistics about the review"
+      optional: true
+      properties:
+        total_lines:
+          type: integer
+        critical_count:
+          type: integer
+        error_count:
+          type: integer
+        warning_count:
+          type: integer
+        info_count:
+          type: integer
+
+  requirements:
+    models:
+      - claude-sonnet-4
+      - gpt-4o
+      - codestral-latest
+    tools:
+      - static-analysis
+    min_context: 64000
+
+  security:
+    risk: low
+    network: false
+    data_access: false
+    require_approval: false
+
+  cost:
+    estimated_tokens: "3x code input length"
+    estimated_latency: "< 10s per 500 lines"
+    pricing_hint: "standard generation"

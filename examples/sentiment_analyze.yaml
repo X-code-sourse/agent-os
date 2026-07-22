@@ -1,0 +1,99 @@
+kind: Capability
+metadata:
+  name: sentiment_analyze
+  version: 1.1.0
+  publisher: intent-os.org
+  description: "Analyzes the emotional tone of text, returning sentiment classification with confidence score and key phrases"
+  tags:
+    - nlp
+    - sentiment-analysis
+    - text-analytics
+    - classification
+    - mood-detection
+
+spec:
+  input:
+    text:
+      type: string
+      description: "The text to analyze for sentiment"
+      min_length: 1
+      max_length: 10000
+    granularity:
+      type: string
+      description: "Level of analysis detail"
+      enum: ["simple", "detailed"]
+      default: "detailed"
+      optional: true
+    domain:
+      type: string
+      description: "Optional domain context for domain-calibrated sentiment scoring"
+      enum: ["general", "product-review", "social-media", "support-ticket", "financial"]
+      default: "general"
+      optional: true
+
+  output:
+    sentiment:
+      type: string
+      description: "Overall sentiment classification"
+      enum:
+        - positive
+        - neutral
+        - negative
+    confidence:
+      type: number
+      description: "Confidence score for the sentiment classification (0.0 to 1.0)"
+      minimum: 0.0
+      maximum: 1.0
+    key_phrases:
+      type: array
+      description: "Key phrases and expressions that influenced the sentiment score"
+      items:
+        type: string
+      min_items: 0
+    scores:
+      type: object
+      description: "Fine-grained sentiment breakdown"
+      optional: true
+      properties:
+        positive_score:
+          type: number
+          description: "Positive sentiment intensity (0.0 to 1.0)"
+        neutral_score:
+          type: number
+          description: "Neutral sentiment intensity (0.0 to 1.0)"
+        negative_score:
+          type: number
+          description: "Negative sentiment intensity (0.0 to 1.0)"
+    tone:
+      type: string
+      description: "Detected emotional tone"
+      optional: true
+      enum:
+        - joyful
+        - angry
+        - sad
+        - anxious
+        - hopeful
+        - sarcastic
+        - formal
+        - casual
+        - urgent
+        - neutral
+
+  requirements:
+    models:
+      - claude-sonnet-4
+      - gpt-4o
+      - gemini-2.5-pro
+    min_context: 16000
+
+  security:
+    risk: low
+    network: false
+    data_access: false
+    require_approval: false
+
+  cost:
+    estimated_tokens: "2x input length"
+    estimated_latency: "< 2s per 500 chars"
+    pricing_hint: "standard generation"

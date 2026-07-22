@@ -1,0 +1,68 @@
+kind: Capability
+metadata:
+  name: translate
+  version: 1.2.0
+  publisher: intent-os.org
+  description: "Translates text between natural languages with optional source language auto-detection"
+  tags:
+    - nlp
+    - translation
+    - i18n
+    - localization
+    - language
+
+spec:
+  input:
+    text:
+      type: string
+      description: "The text to translate"
+      min_length: 1
+      max_length: 100000
+    source_lang:
+      type: string
+      description: "Source language code (ISO 639-1). If omitted, the system auto-detects."
+      pattern: "^[a-z]{2}(-[A-Z]{2})?$"
+      optional: true
+    target_lang:
+      type: string
+      description: "Target language code (ISO 639-1)."
+      pattern: "^[a-z]{2}(-[A-Z]{2})?$"
+      examples:
+        - "zh"
+        - "es"
+        - "fr"
+        - "de"
+        - "ja"
+        - "ar"
+
+  output:
+    translated_text:
+      type: string
+      description: "The translated text in the target language"
+    detected_language:
+      type: string
+      description: "The detected source language (ISO 639-1). Only returned when source_lang is omitted."
+      optional: true
+    confidence:
+      type: number
+      description: "Confidence score of the detection or translation quality (0.0 to 1.0)"
+      minimum: 0.0
+      maximum: 1.0
+
+  requirements:
+    models:
+      - claude-sonnet-4
+      - gpt-4o
+      - gemini-2.5-pro
+    min_context: 32000
+
+  security:
+    risk: low
+    network: true
+    data_access: false
+    require_approval: false
+
+  cost:
+    estimated_tokens: "1.5x input length"
+    estimated_latency: "< 3s per 1000 chars"
+    pricing_hint: "standard generation"
