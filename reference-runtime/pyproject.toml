@@ -39,6 +39,11 @@ Documentation = "https://intent-os.org"
 [project.scripts]
 intent-os = "cli:main"
 
+[tool.pytest.ini_options]
+markers = [
+    "ask_e2e: end-to-end tests for the Ask command that connect to a real LLM provider",
+]
+
 [tool.setuptools.packages.find]
 include = ["core*", "adapters*", "tools*", "commands*"]
 exclude = ["tests*"]
