@@ -20,6 +20,7 @@ from socketserver import ThreadingMixIn
 from typing import Any
 
 from proxy.tracer import AgentTracer, detect_agent
+from proxy.guard import ToolCallGuard
 
 
 # ── Upstream API URLs ──
@@ -100,14 +101,25 @@ def _get_model_from_request(body: dict[str, Any]) -> str:
 class ProxyHandler(BaseHTTPRequestHandler):
     """HTTP request handler that proxies LLM API calls and records them."""
 
-    # Class-level tracer shared across all requests (lazy init)
+    # Class-level tracer and guard shared across all requests (lazy init)
     _tracer: AgentTracer | None = None
+    _guard: ToolCallGuard | None = None
 
     @classmethod
     def _get_tracer(cls) -> AgentTracer:
         if cls._tracer is None:
             cls._tracer = AgentTracer()
         return cls._tracer
+
+    @classmethod
+    def _get_guard(cls) -> ToolCallGuard | None:
+        return cls._guard
+
+    @classmethod
+    def enable_guard(cls) -> None:
+        """Enable the Tool Call Guard for this handler."""
+        if cls._guard is None:
+            cls._guard = ToolCallGuard()
 
     def do_POST(self) -> None:
         """Handle POST requests — proxy to OpenAI or Anthropic."""
@@ -179,7 +191,8 @@ class ProxyHandler(BaseHTTPRequestHandler):
 
         # Record the call
         status = "success" if status_code < 400 else "failure"
-        self._get_tracer().trace_call(
+        tracer = self._get_tracer()
+        tracer.trace_call(
             provider=provider or "unknown",
             model=model,
             input_tokens=input_tokens,
@@ -190,6 +203,23 @@ class ProxyHandler(BaseHTTPRequestHandler):
             endpoint=path,
             error_message=error_message,
         )
+
+        # Optional: Tool Call Guard inspection
+        guard = self._get_guard()
+        if guard is not None and status_code < 400 and response_body:
+            try:
+                if provider == "openai":
+                    results = guard.inspect_openai_response(response_body, tracer.trace_id)
+                else:
+                    results = guard.inspect_anthropic_response(response_body, tracer.trace_id)
+                for r in results:
+                    if r.get("decision") in ("deny", "require_review"):
+                        print(f"  [GUARD] {r['decision']}: tool={r['tool']} risk={r['risk']} rationale={r['rationale']}")
+                    if r.get("sensitive_data_found"):
+                        for sf in r["sensitive_data_found"]:
+                            print(f"  [GUARD] Sensitive data: {sf['type']}")
+            except Exception:
+                pass  # Guard is optional — never block the response due to guard errors
 
         # Return the response to the client
         self.send_response(status_code)
@@ -234,16 +264,21 @@ class ThreadedProxyServer(ThreadingMixIn, HTTPServer):
     daemon_threads = True
 
 
-def start_proxy(port: int = 8377, host: str = "127.0.0.1") -> ThreadedProxyServer:
+def start_proxy(port: int = 8377, host: str = "127.0.0.1", use_guard: bool = False) -> ThreadedProxyServer:
     """Start the agent hook proxy server.
 
     Args:
         port: Port to listen on (default 8377).
         host: Host to bind to (default 127.0.0.1).
+        use_guard: Enable optional Tool Call Guard.
 
     Returns:
         The HTTP server instance (call .serve_forever() to run).
     """
+    if use_guard:
+        ProxyHandler.enable_guard()
+        print("  [GUARD] Tool Call Guard enabled — inspecting tool call safety.")
+        print()
     server = ThreadedProxyServer((host, port), ProxyHandler)
     # Onboarding instructions are printed by commands/proxy.py
     return server

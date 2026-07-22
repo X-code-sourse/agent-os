@@ -29,6 +29,7 @@ def _cmd_start(args: Any) -> None:
 
     port = getattr(args, "port", 8377)
     host = getattr(args, "host", "127.0.0.1")
+    guard_enabled = getattr(args, "guard", False)
 
     print()
     print("  ================================================")
@@ -36,6 +37,8 @@ def _cmd_start(args: Any) -> None:
     print("  ================================================")
     print()
     print(f"  Proxy listening on http://{host}:{port}")
+    if guard_enabled:
+        print(f"  Tool Call Guard: ENABLED (inspect and classify tool call safety)")
     print()
     print("  Connect your AI agent:")
     print()
@@ -48,7 +51,7 @@ def _cmd_start(args: Any) -> None:
     print()
 
     try:
-        server = start_proxy(port=port, host=host)
+        server = start_proxy(port=port, host=host, use_guard=guard_enabled)
         server.serve_forever()
     except PermissionError:
         print(f"  Error: Permission denied for port {port}.", file=sys.stderr)

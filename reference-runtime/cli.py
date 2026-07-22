@@ -27,6 +27,7 @@ import commands.proxy
 import commands.doctor
 import commands.cost
 import commands.audit
+import commands.scan
 
 # All cmd_* functions are imported from command modules via the registry pattern below
 CMD_MAP = {
@@ -50,6 +51,7 @@ CMD_MAP = {
     "doctor": commands.doctor.cmd_doctor,
     "cost": commands.cost.cmd_cost,
     "audit": commands.audit.cmd_audit,
+    "scan": commands.scan.cmd_scan,
 }
 
 def build_parser() -> argparse.ArgumentParser:
@@ -250,6 +252,8 @@ def build_parser() -> argparse.ArgumentParser:
     ps = proxy_sub.add_parser("start", help="Start the proxy server")
     ps.add_argument("--port", type=int, default=8377, help="Port (default: 8377)")
     ps.add_argument("--host", default="127.0.0.1", help="Host (default: 127.0.0.1)")
+    ps.add_argument("--guard", action="store_true",
+                    help="Enable Tool Call Guard (inspect and classify tool call safety)")
     ps.set_defaults(func=CMD_MAP["proxy"])
     pst = proxy_sub.add_parser("status", help="Check if the proxy is running")
     pst.add_argument("--port", type=int, default=8377, help="Port (default: 8377)")
@@ -284,6 +288,19 @@ def build_parser() -> argparse.ArgumentParser:
     ar.set_defaults(func=CMD_MAP["audit"])
     # Default: just show summary
     audit_parser.set_defaults(audit_action="summary", func=CMD_MAP["audit"])
+
+    # scan
+    scan_parser = subparsers.add_parser("scan",
+        help="Scan agent traces for security issues")
+    scan_parser.add_argument("--trace", "-t", default=None,
+                             help="Scan a specific trace ID (default: all recent)")
+    scan_parser.add_argument("--report", "-r", action="store_true",
+                             help="Generate a security report file")
+    scan_parser.add_argument("--format", choices=["csv", "html"], default="csv",
+                             help="Report format (default: csv)")
+    scan_parser.add_argument("--output", "-o", default=None,
+                             help="Output file path")
+    scan_parser.set_defaults(func=CMD_MAP["scan"])
 
     return parser
 
