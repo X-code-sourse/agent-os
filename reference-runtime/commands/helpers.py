@@ -108,9 +108,16 @@ def setup_executor(adapters: list[str] | None = None) -> Executor:
             print(f"  Using local Ollama (free, no API key needed)")
             print(f"  Tip: Set OPENAI_API_KEY or OPENROUTER_API_KEY for cloud models")
     else:
-        print("  Warning: No adapters loaded.")
-        print("  Tip: Install Ollama (https://ollama.com) and run: ollama pull llama3.2:1b")
-        print("  Or set OPENAI_API_KEY for cloud models.")
+        print("  Warning: No runtime adapters available.")
+        print()
+        print("  Install Ollama (free, local, no API key):")
+        print("    https://ollama.com/download")
+        print("    ollama pull llama3.2:1b")
+        print("    ollama serve")
+        print()
+        print("  Or set an API key:")
+        print("    export OPENAI_API_KEY=sk-...")
+        print()
     return executor
 
 

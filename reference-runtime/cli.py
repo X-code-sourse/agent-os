@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from typing import Any
 
 import commands.validate
 import commands.run
@@ -16,6 +17,8 @@ import commands.workflow
 import commands.mcp_server
 import commands.import_cmd
 import commands.export
+import commands.quickstart
+import commands.evolution
 
 # All cmd_* functions are imported from command modules via the registry pattern below
 CMD_MAP = {
@@ -30,6 +33,8 @@ CMD_MAP = {
     "mcp-server": commands.mcp_server.cmd_mcp_server,
     "import": commands.import_cmd.cmd_import,
     "export": commands.export.cmd_export,
+    "quickstart": commands.quickstart.cmd_quickstart,
+    "evolution": commands.evolution.cmd_evolution,
 }
 
 def build_parser() -> argparse.ArgumentParser:
@@ -39,7 +44,7 @@ def build_parser() -> argparse.ArgumentParser:
         description="Intent OS Reference Runtime - Open AI Capability Interoperability",
         epilog="Phase 0 - Prove that one Manifest can run on multiple runtimes.",
     )
-    parser.add_argument("--version", action="version", version="intent-os 0.2.0")
+    parser.add_argument("--version", action="version", version="intent-os 0.3.0")
 
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
@@ -88,6 +93,13 @@ def build_parser() -> argparse.ArgumentParser:
     reg_export = registry_sub.add_parser("export", help="Export registry snapshot to JSON")
     reg_export.add_argument("output_path", help="Output JSON file path")
     reg_export.set_defaults(func=CMD_MAP["registry"])
+    reg_search = registry_sub.add_parser("search", help="Semantic search for capabilities by text query")
+    reg_search.add_argument("query", help="Free-text search query")
+    reg_search.add_argument("--limit", "-l", type=int, default=10, help="Max results (default: 10)")
+    reg_search.set_defaults(func=CMD_MAP["registry"])
+
+    # security
+    _build_security_parser(subparsers)
 
     # event
     event_parser = subparsers.add_parser("event", help="Query execution events from the Event Store")
@@ -165,7 +177,60 @@ def build_parser() -> argparse.ArgumentParser:
     export_parser.add_argument("--as-tool", action="store_true", help="Wrap in OpenAI tool format")
     export_parser.set_defaults(func=CMD_MAP["export"])
 
+    # quickstart
+    qs_parser = subparsers.add_parser("quickstart", help="Display a getting-started guide")
+    qs_parser.set_defaults(func=CMD_MAP["quickstart"])
+
+    # evolution
+    evolution_parser = subparsers.add_parser("evolution", help="Run the Evolution Loop for continuous optimization")
+    evolution_sub = evolution_parser.add_subparsers(dest="action", help="Evolution actions")
+
+    ev_run = evolution_sub.add_parser("run", help="Run one iteration of the Evolution Loop")
+    ev_run.set_defaults(func=CMD_MAP["evolution"])
+
+    ev_status = evolution_sub.add_parser("status", help="Show the number of pending suggestions")
+    ev_status.set_defaults(func=CMD_MAP["evolution"])
+
+    ev_queue = evolution_sub.add_parser("queue", help="List suggestions awaiting review")
+    ev_queue.set_defaults(func=CMD_MAP["evolution"])
+
+    ev_approve = evolution_sub.add_parser("approve", help="Approve a pending suggestion by ID")
+    ev_approve.add_argument("suggestion_id", type=int, help="Database ID of the suggestion to approve")
+    ev_approve.set_defaults(func=CMD_MAP["evolution"])
+
+    ev_reject = evolution_sub.add_parser("reject", help="Reject a pending suggestion by ID")
+    ev_reject.add_argument("suggestion_id", type=int, help="Database ID of the suggestion to reject")
+    ev_reject.set_defaults(func=CMD_MAP["evolution"])
+
     return parser
+
+
+def _build_security_parser(subparsers: Any) -> None:
+    """Register security subcommands with our existing dispatch pattern."""
+    import commands.security
+
+    sec_parser = subparsers.add_parser("security", help="Manage security policies and evaluation")
+    sec_sub = sec_parser.add_subparsers(dest="security_action", help="Security actions")
+
+    # policy list / get / apply
+    pl = sec_sub.add_parser("policy", help="Manage policies")
+    pl_sub = pl.add_subparsers(dest="policy_action")
+    pl_list = pl_sub.add_parser("list", help="List all policies")
+    pl_list.set_defaults(func=commands.security.cmd_policy_list)
+    pl_get = pl_sub.add_parser("get", help="Get policy details")
+    pl_get.add_argument("name", help="Policy name")
+    pl_get.set_defaults(func=commands.security.cmd_policy_get)
+    pl_apply = pl_sub.add_parser("apply", help="Apply a policy from YAML file")
+    pl_apply.add_argument("file", help="Path to policy YAML file")
+    pl_apply.set_defaults(func=commands.security.cmd_policy_apply)
+
+    # evaluate / audit
+    ev = sec_sub.add_parser("evaluate", help="Evaluate a capability against policies (dry run)")
+    ev.add_argument("manifest", help="Path to Capability Manifest YAML file")
+    ev.set_defaults(func=commands.security.cmd_evaluate)
+
+    au = sec_sub.add_parser("audit", help="Export compliance report")
+    au.set_defaults(func=commands.security.cmd_audit)
 
 
 def main() -> None:

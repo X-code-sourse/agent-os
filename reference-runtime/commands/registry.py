@@ -79,3 +79,20 @@ def cmd_registry(args: Any) -> None:
         except Exception as exc:
             print(f"Export failed: {exc}", file=sys.stderr)
             sys.exit(1)
+
+    elif args.action == "search":
+        query = args.query
+        results = registry.find_by_text(query, limit=args.limit or 10)
+
+        if not results:
+            print(f"No capabilities matching '{query}'.")
+            return
+
+        print(f"Search results for '{query}' ({len(results)}):")
+        print(f"  {'Score':<8} {'Name':<35} {'Description':<50}")
+        print(f"  {'-'*93}")
+        for r in results:
+            cap = r["capability"]
+            name = f"{cap['name']}@{cap.get('version', '?')}" if cap.get('version') else cap['name']
+            desc = (cap.get('description', '') or '')[:48]
+            print(f"  {r['score']:<8.4f} {name:<35} {desc:<50}")

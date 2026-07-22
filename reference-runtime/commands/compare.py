@@ -39,10 +39,18 @@ def cmd_compare(args: Any) -> None:
 
     if len(adapters) < 2:
         print(
-            "Warning: Comparison is most useful with at least 2 adapters loaded "
-            "(openai + anthropic)",
+            "Warning: Comparison needs at least 2 adapters loaded. "
+            "Install Ollama (free) or set up API keys for multiple runtimes.",
             file=sys.stderr,
         )
+        print(file=sys.stderr)
+        print("  To compare OpenAI ↔ Ollama:", file=sys.stderr)
+        print("    1. Install Ollama: https://ollama.com/download", file=sys.stderr)
+        print("    2. ollama pull llama3.2:1b", file=sys.stderr)
+        print("    3. ollama serve", file=sys.stderr)
+        print("    4. export OPENAI_API_KEY=sk-...", file=sys.stderr)
+        print("    5. intent-os compare <manifest> --input '...'", file=sys.stderr)
+        print(file=sys.stderr)
 
     records = []
     for adapter_name in adapters:
