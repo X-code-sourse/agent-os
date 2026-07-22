@@ -1,13 +1,13 @@
 <p align="center">
   <h1 align="center">Intent OS</h1>
-  <p align="center"><strong>See exactly what your AI agent did.</strong></p>
-  <p align="center">Intent OS is an open-source flight recorder for AI agents.</p>
+  <p align="center"><strong>An open-source flight recorder for AI agents.</strong></p>
+  <p align="center">See what your agent did, why it failed, and what it cost.</p>
 </p>
 
 <p align="center">
   <a href="https://pypi.org/project/intentos/"><img src="https://img.shields.io/badge/pip-install%20intentos-blue?style=flat&logo=python" alt="pip install"></a>
-  <a href="https://x-code-sourse.github.io/intentos/"><img src="https://img.shields.io/badge/docs-intent--os.org-blue?style=flat" alt="Docs"></a>
-  <a href="https://github.com/haihaoxu/intentos"><img src="https://img.shields.io/badge/github-X--code--sourse/intentos-blue?style=flat&logo=github" alt="GitHub"></a>
+  <a href="https://haihaoxu.github.io/intentos/"><img src="https://img.shields.io/badge/docs-intent--os.org-blue?style=flat" alt="Docs"></a>
+  <a href="https://github.com/haihaoxu/intentos"><img src="https://img.shields.io/badge/github-haihaoxu/intentos-blue?style=flat&logo=github" alt="GitHub"></a>
   <a href="https://github.com/haihaoxu/intentos/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-AGPLv3-blue?style=flat" alt="License"></a>
 </p>
 
@@ -16,77 +16,72 @@
 ```bash
 pip install intentos
 
-# See what your last agent did
+# What happened?
 intent-os doctor
 
-# Try the demo
-intent-os demo --auto
+# What did it do?
+intent-os inspect latest
+
+# What did it cost?
+intent-os cost
 ```
 
 ---
 
 ## Trace · Debug · Cost
 
-AI agents are powerful. But they are black boxes.
+AI agents are becoming powerful, but debugging them is still painful.
 
-You don't know:
-- **what they did** — which tools they called, what steps they took
-- **why they failed** — what went wrong, where it happened
-- **how much they cost** — tokens, latency, model calls
+You give an agent a task. It runs for minutes. Then it fails. And you don't know:
+- **what tools it called** — which steps it took
+- **where it failed** — what went wrong
+- **how much it cost** — tokens, model calls, latency
 
-Intent OS records everything your agent does and gives you answers.
-
-```bash
-# What happened?
-intent-os doctor
-
-# See every step
-intent-os inspect latest
-
-# Export as HTML
-intent-os inspect latest --html
-```
-
-Example output:
+Intent OS records everything your agent does. One command shows the full picture.
 
 ```
-[OK]  Goal:        refactor-auth-to-jwt
-     Runtime:    anthropic (AnthropicAdapter)
-     Duration:   14,327ms
-     Cost:       $0.0842
-     Tokens:     4,891
+[14:02:01] START
+[14:02:09] MODEL CALL  claude-sonnet-4  (2,451 tokens)
+[14:02:14] TOOL        filesystem.write
+[14:02:27] FAILED      test_jwt_verify failed
 
-[14:02:01] > START (planner)
-[14:02:06] > INVOKE (adapter) -- 2451 tokens
-[14:02:08] OK DONE  (3241ms)
-[14:02:09] > INVOKE (adapter) model=claude-sonnet-4
-[14:02:14] OK DONE  (5824ms)
-[14:02:27] !! FAIL  (12713ms) -- reason="test_jwt_verify failed"
+Goal:        refactor-auth-module
+Duration:    14.3s
+Cost:        $0.08
+Tokens:      4,891
 ```
 
 ---
 
 ## Record any AI agent
 
-Intent OS can record **any** AI agent that calls OpenAI or Anthropic APIs — Claude Code, Cursor, Copilot, or your own:
+Intent OS records **any** agent that uses OpenAI or Anthropic APIs — Claude Code, Cursor, or your own. Just set one environment variable:
 
 ```bash
-# Start the proxy
 intent-os proxy start
 
-# Point your agent at it
 export OPENAI_BASE_URL=http://localhost:8377
 export ANTHROPIC_BASE_URL=http://localhost:8377
-
-# Everything is recorded automatically
-intent-os doctor
 ```
 
-No SDK changes. No code modifications. Just a single environment variable.
+Everything runs locally. Your data stays on your machine.
 
 ---
 
-## Quick Start
+## For teams
+
+As your team grows, Intent OS grows with you:
+
+| | |
+|---|---|
+| **Cost tracking** | `intent-os cost --by agent` — see spending per agent, per model |
+| **Security policies** | Define what agents can and can't do. `intent-os security policy apply` |
+| **Compliance audit** | Full execution records with HTML/CSV export. `intent-os audit report` |
+| **Security scanning** | Scan traces for sensitive data and dangerous patterns. `intent-os scan` |
+
+---
+
+## Quick start
 
 ```bash
 # Install
@@ -101,21 +96,22 @@ intent-os run translate -p text="Hello world" -p target_lang=zh
 # See the full trace
 intent-os inspect latest
 
-# Export as shareable HTML
-intent-os inspect latest --html
+# Track spending
+intent-os cost
+
+# Record any agent's API calls
+intent-os proxy start
 ```
 
 ---
 
-## Features
+## Why Intent OS?
 
-| | |
-|---|---|
-| **Trace** | Full execution timeline — every model call, tool invocation, file change |
-| **Debug** | Failure analysis with actionable suggestions |
-| **Cost** | Token tracking, cost estimation per model and agent |
-| **Security** | Policy engine, audit log, compliance reporting |
-| **Cross-Runtime** | Run the same capability on OpenAI, Anthropic, Ollama, or local |
+| Instead of... | Intent OS is... |
+|--------------|----------------|
+| Cloud-only tracing (LangSmith, LangFuse) | **Local-first.** Your data never leaves your machine. |
+| Siloed per-platform logs | **Universal.** Works with any OpenAI/Anthropic agent. |
+| Just logging | **Structured traces.** One intent → many API calls → one timeline. |
 
 ---
 
@@ -124,24 +120,16 @@ intent-os inspect latest --html
 ```
 AI Agent → Intent OS → LLM (OpenAI / Anthropic / Ollama)
                 │
-                ├── Event Store (execution log)
-                ├── inspect / doctor / cost
-                └── Security Policy Engine
+                ├── Flight Recorder (doctor / inspect / trace)
+                ├── Observability (cost / analytics)
+                └── Governance (security / audit)
 ```
-
-Intent OS is more than a flight recorder — it's an agent operating layer with security policies, cross-runtime execution, cost models, and workflow orchestration. But the flight recorder is where you start.
-
----
-
-## Why not just use MCP?
-
-[MCP](https://modelcontextprotocol.io) standardizes **connection** — how an AI tool talks to a runtime. Intent OS standardizes **execution** — how a capability is described, traced, secured, and recorded across runtimes. They are complementary.
 
 ---
 
 ## Tested
 
-**709 tests passed, 8 skipped, 0 failed** — CI matrix across Python 3.10, 3.11, and 3.12.
+**709 tests passed, 8 skipped, 0 failed** — CI across Python 3.10, 3.11, and 3.12.
 
 ---
 
@@ -149,7 +137,7 @@ Intent OS is more than a flight recorder — it's an agent operating layer with 
 
 AGPLv3 + Commercial Option. See [LICENSE](LICENSE).
 
-Personal / open-source use is free under AGPLv3. Commercial use requires a commercial license.
+Personal and open-source use is free under AGPLv3. Commercial use requires a commercial license.
 
 ---
 
