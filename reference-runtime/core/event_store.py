@@ -74,6 +74,8 @@ CREATE TABLE IF NOT EXISTS execution_records (
     total_latency_ms REAL NOT NULL DEFAULT 0,
     total_cost_usd REAL NOT NULL DEFAULT 0,
     total_tokens INTEGER NOT NULL DEFAULT 0,
+    agent_id TEXT,
+    agent_name TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 """
@@ -276,12 +278,14 @@ class EventStore:
         conn.commit()
         return count
 
-    def save_execution_record(self, record: ExecutionRecord) -> None:
+    def save_execution_record(self, record: ExecutionRecord, agent_id: str | None = None, agent_name: str | None = None) -> None:
         """
         Persist an ExecutionRecord to the store.
 
         Args:
             record: The ExecutionRecord to persist.
+            agent_id: Optional registered agent ID for this execution.
+            agent_name: Optional resolved agent name.
         """
         conn = self._get_conn()
         try:
@@ -289,8 +293,9 @@ class EventStore:
                 """INSERT OR REPLACE INTO execution_records (
                     trace_id, spec_version, manifest_name, manifest_version,
                     runtime_id, adapter, adapter_version, input, output,
-                    status, error, total_latency_ms, total_cost_usd, total_tokens
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    status, error, total_latency_ms, total_cost_usd, total_tokens,
+                    agent_id, agent_name
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     record.trace_id,
                     record.spec_version,
@@ -306,6 +311,8 @@ class EventStore:
                     record.total_latency_ms,
                     record.total_cost_usd,
                     record.total_tokens,
+                    agent_id,
+                    agent_name,
                 ),
             )
             conn.commit()
