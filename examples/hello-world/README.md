@@ -192,7 +192,7 @@ In plain English, this Manifest says:
 Install Intent OS and ensure at least one model adapter is available.
 
 ```bash
-pip install intent-os
+pip install intentos
 ```
 
 ### Validate the Manifest

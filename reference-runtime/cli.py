@@ -238,9 +238,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     # inspect
     inspect_parser = subparsers.add_parser("inspect",
-        help="Show an agent execution trace — see what your agent did, why it failed, and how much it cost")
+        help="Show an agent execution trace — see what your agent did, why it failed, and how much it cost",
+        description="Displays a complete execution trace with execution ID, agent identity, "
+                    "runtime, cost, tokens, and a full event timeline.")
     inspect_parser.add_argument("trace_id", nargs="?", default="latest",
-                                help="Trace ID to inspect (default: latest)")
+                                help="Execution ID or trace ID to inspect (default: latest)")
     inspect_parser.add_argument("--html", action="store_true",
                                 help="Export trace as a standalone HTML file for sharing")
     inspect_parser.set_defaults(func=CMD_MAP["inspect"])
@@ -262,7 +264,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     # doctor
     doctor_parser = subparsers.add_parser("doctor",
-        help="Check your AI agent's health — see what happened, what went wrong, and how to fix it")
+        help="Check your AI agent's health — see what happened, what went wrong, and how to fix it",
+        description="Checks the most recent agent execution and reports:\n"
+                    "- Whether it succeeded or failed\n"
+                    "- What went wrong (with error details)\n"
+                    "- How to fix it\n"
+                    "- How much it cost and how long it took")
     doctor_parser.set_defaults(func=CMD_MAP["doctor"])
 
     # cost

@@ -50,9 +50,7 @@ def _resolve_trace_id(store: Any, trace_id: str) -> str:
         if not all_ids:
             print("No traces found. Run a capability first:")
             print()
-            print("    pip install intent-os")
-            print("    pip install 'intent-os[all]'")
-            print("    export OPENAI_API_KEY=sk-...")
+            print("    pip install intentos")
             print("    intent-os run translate -p text=hello -p target_lang=zh")
             print()
             print("  Or try the demo:")

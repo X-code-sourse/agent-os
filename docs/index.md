@@ -76,9 +76,9 @@ They are complementary: Intent OS can consume MCP servers as capability provider
 
 ## Project Status
 
-:material-test-tube: **Phase 0: Interoperability Verified** — 689 tests, 8 skipped, 0 failures
+:material-test-tube: **709 tests passed, 8 skipped, 0 failures** — CI across Python 3.10, 3.11, and 3.12.
 
-The same manifest parses, executes, and produces compatible events across Ollama, OpenAI, and Anthropic runtimes. [See the specs](https://github.com/haihaoxu/intentos/tree/main/specs) for details.
+Intent OS is building the execution layer for AI agents. [See the specs](https://github.com/haihaoxu/intentos/tree/main/specs) for details.
 
 ---
 
