@@ -131,9 +131,11 @@ AI Agent → Intent OS → LLM (OpenAI / Anthropic / Ollama)
 
 ## Vision
 
-**Today** Intent OS helps developers understand what their AI agents did, why they failed, and how much they cost.
+Intent OS is **building the execution layer for AI agents.**
 
-**Tomorrow** it aims to become the execution layer that makes agents portable, observable, and governable across any runtime.
+**Today** it provides an open-source flight recorder — observe what your agents did, debug why they failed, and understand what they cost.
+
+**Tomorrow** it will make agents portable, governable, and composable across any runtime.
 
 ---
 
