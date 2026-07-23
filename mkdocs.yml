@@ -1,6 +1,6 @@
 # Intent OS — Documentation Site
 site_name: Intent OS
-site_description: "An open interoperability layer for AI capabilities — write once, run on any runtime."
+site_description: "An open-source flight recorder for AI agents — see what your agent did, why it failed, and what it cost."
 site_url: https://intent-os.org
 repo_url: https://github.com/haihaoxu/intentos
 repo_name: haihaoxu/intentos

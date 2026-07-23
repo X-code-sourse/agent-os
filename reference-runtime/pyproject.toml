@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "intentos"
 version = "0.4.3"
-description = "An open interoperability layer for AI capabilities, workflows, and execution"
+description = "An open-source flight recorder for AI agents — see what your agent did, why it failed, and what it cost"
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"

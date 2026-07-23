@@ -4,13 +4,13 @@ Thank you for your interest in Intent OS! This document covers the basics of get
 
 ## Project overview
 
-Intent OS is an **open interoperability layer for AI capabilities, workflows, and execution**. We define standards (Capability Manifest, Workflow Graph, Event Schema) and provide a reference runtime that lets AI capabilities run across different platforms (OpenAI, Anthropic, Ollama, etc.).
+Intent OS is an **open-source observability layer for AI agents**. We're building the execution layer that makes agents observable, governable, and portable across runtimes. See [README](README.md) for the full project overview.
 
 ## Getting started
 
 ```bash
 git clone https://github.com/haihaoxu/intentos.git
-cd intent-os/reference-runtime
+cd intentos/reference-runtime
 pip install -e .
 
 # Run the tests
