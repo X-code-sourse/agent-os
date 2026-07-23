@@ -128,9 +128,9 @@ def _print_terminal(data: dict[str, Any]) -> None:
 
         icon = _STATUS_ICON.get(status, "❓")
 
-        # Check if this is a proxy-traced event with source_agent
-        # stored in the first CapabilityInvoked event's payload
+        # Check events for agent identity (source_agent or registered agent_id)
         proxy_agent = None
+        registered_agent_id = None
         for evt in events:
             raw_payload = evt.get("payload", "{}")
             if isinstance(raw_payload, str):
@@ -141,13 +141,28 @@ def _print_terminal(data: dict[str, Any]) -> None:
                     p = {}
             else:
                 p = raw_payload
-            sa = p.get("source_agent") if isinstance(p, dict) else None
-            if sa:
-                proxy_agent = sa
+            if isinstance(p, dict):
+                if not proxy_agent:
+                    proxy_agent = p.get("source_agent")
+                if not registered_agent_id:
+                    registered_agent_id = p.get("agent_id")
+            if proxy_agent and registered_agent_id:
                 break
 
         print(f"  {icon}  Goal:        {name}")
-        if proxy_agent:
+        if registered_agent_id:
+            # Look up the registered agent name
+            agent_name = registered_agent_id
+            try:
+                from core.agent_store import AgentStore
+                agent = AgentStore().get(registered_agent_id)
+                if agent:
+                    agent_name = agent.name
+            except Exception:
+                pass
+            print(f"     Agent:      {agent_name}")
+            print(f"     Agent ID:   {registered_agent_id}")
+        elif proxy_agent:
             print(f"     Agent:      {proxy_agent}")
         print(f"     Execution:  exec_{trace_id[:12]}")
         print(f"     Runtime:    {runtime} ({adapter})")

@@ -28,6 +28,7 @@ import commands.doctor
 import commands.cost
 import commands.audit
 import commands.scan
+import commands.agent
 
 # All cmd_* functions are imported from command modules via the registry pattern below
 CMD_MAP = {
@@ -52,6 +53,7 @@ CMD_MAP = {
     "cost": commands.cost.cmd_cost,
     "audit": commands.audit.cmd_audit,
     "scan": commands.scan.cmd_scan,
+    "agent": commands.agent.cmd_agent,
 }
 
 def build_parser() -> argparse.ArgumentParser:
@@ -256,6 +258,8 @@ def build_parser() -> argparse.ArgumentParser:
     ps.add_argument("--host", default="127.0.0.1", help="Host (default: 127.0.0.1)")
     ps.add_argument("--guard", action="store_true",
                     help="Enable Tool Call Guard (inspect and classify tool call safety)")
+    ps.add_argument("--agent", default=None,
+                    help="Agent ID to associate with captured traces (use: intent-os agent create)")
     ps.set_defaults(func=CMD_MAP["proxy"])
     pst = proxy_sub.add_parser("status", help="Check if the proxy is running")
     pst.add_argument("--port", type=int, default=8377, help="Port (default: 8377)")
@@ -308,6 +312,23 @@ def build_parser() -> argparse.ArgumentParser:
     scan_parser.add_argument("--output", "-o", default=None,
                              help="Output file path")
     scan_parser.set_defaults(func=CMD_MAP["scan"])
+
+    # agent
+    agent_parser = subparsers.add_parser("agent",
+        help="Manage AI agent identities for execution tracking and governance")
+    agent_sub = agent_parser.add_subparsers(dest="agent_action", help="Agent actions")
+    ac = agent_sub.add_parser("create", help="Register a new agent")
+    ac.add_argument("--name", "-n", default="", help="Human-readable name for the agent")
+    ac.add_argument("--description", "-d", default="", help="Description of what the agent does")
+    ac.set_defaults(func=CMD_MAP["agent"])
+    al = agent_sub.add_parser("list", help="List all registered agents")
+    al.set_defaults(func=CMD_MAP["agent"])
+    ag = agent_sub.add_parser("get", help="Get agent details")
+    ag.add_argument("agent_id", help="Agent ID to look up")
+    ag.set_defaults(func=CMD_MAP["agent"])
+    ad = agent_sub.add_parser("delete", help="Delete an agent")
+    ad.add_argument("agent_id", help="Agent ID to delete")
+    ad.set_defaults(func=CMD_MAP["agent"])
 
     return parser
 

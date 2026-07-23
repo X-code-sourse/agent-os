@@ -120,13 +120,26 @@ class AgentTracer:
         source_agent: str,
         endpoint: str = "",
         error_message: str | None = None,
+        agent_id: str | None = None,
     ) -> str:
         """Record one LLM API call as an Event Store event.
+
+        Args:
+            agent_id: Optional registered agent ID to associate with this call.
 
         Returns the trace_id for later inspection.
         """
         total_tokens = input_tokens + output_tokens
         cost = estimate_cost(model, input_tokens, output_tokens)
+
+        # Update agent's last_seen_at if agent_id is provided
+        if agent_id:
+            try:
+                from core.agent_store import AgentStore
+                store = AgentStore()
+                store.record_execution(agent_id)
+            except Exception:
+                pass
 
         event = Event(
             event_id=str(uuid.uuid4()),
@@ -149,6 +162,8 @@ class AgentTracer:
             "source_agent": source_agent,
             "endpoint": endpoint,
         }
+        if agent_id:
+            event.payload["agent_id"] = agent_id
         if error_message:
             event.payload["error"] = error_message
 

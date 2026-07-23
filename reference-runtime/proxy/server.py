@@ -101,9 +101,10 @@ def _get_model_from_request(body: dict[str, Any]) -> str:
 class ProxyHandler(BaseHTTPRequestHandler):
     """HTTP request handler that proxies LLM API calls and records them."""
 
-    # Class-level tracer and guard shared across all requests (lazy init)
+    # Class-level tracer, guard, and agent_id shared across all requests
     _tracer: AgentTracer | None = None
     _guard: ToolCallGuard | None = None
+    _agent_id: str | None = None
 
     @classmethod
     def _get_tracer(cls) -> AgentTracer:
@@ -120,6 +121,11 @@ class ProxyHandler(BaseHTTPRequestHandler):
         """Enable the Tool Call Guard for this handler."""
         if cls._guard is None:
             cls._guard = ToolCallGuard()
+
+    @classmethod
+    def set_agent_id(cls, agent_id: str | None) -> None:
+        """Set the agent ID to associate with all captured traces."""
+        cls._agent_id = agent_id
 
     def do_POST(self) -> None:
         """Handle POST requests — proxy to OpenAI or Anthropic."""
@@ -202,6 +208,7 @@ class ProxyHandler(BaseHTTPRequestHandler):
             source_agent=agent,
             endpoint=path,
             error_message=error_message,
+            agent_id=self._agent_id,
         )
 
         # Optional: Tool Call Guard inspection
@@ -264,13 +271,14 @@ class ThreadedProxyServer(ThreadingMixIn, HTTPServer):
     daemon_threads = True
 
 
-def start_proxy(port: int = 8377, host: str = "127.0.0.1", use_guard: bool = False) -> ThreadedProxyServer:
+def start_proxy(port: int = 8377, host: str = "127.0.0.1", use_guard: bool = False, agent_id: str | None = None) -> ThreadedProxyServer:
     """Start the agent hook proxy server.
 
     Args:
         port: Port to listen on (default 8377).
         host: Host to bind to (default 127.0.0.1).
         use_guard: Enable optional Tool Call Guard.
+        agent_id: Registered agent ID for execution tracking.
 
     Returns:
         The HTTP server instance (call .serve_forever() to run).
@@ -279,6 +287,8 @@ def start_proxy(port: int = 8377, host: str = "127.0.0.1", use_guard: bool = Fal
         ProxyHandler.enable_guard()
         print("  [GUARD] Tool Call Guard enabled — inspecting tool call safety.")
         print()
+    if agent_id:
+        ProxyHandler.set_agent_id(agent_id)
     server = ThreadedProxyServer((host, port), ProxyHandler)
     # Onboarding instructions are printed by commands/proxy.py
     return server
