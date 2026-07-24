@@ -73,7 +73,7 @@ def build_parser() -> argparse.ArgumentParser:
         description="Intent OS Reference Runtime - Open AI Capability Interoperability",
         epilog="Phase 0 - Prove that one Manifest can run on multiple runtimes.",
     )
-    parser.add_argument("--version", action="version", version="intent-os 0.5.1")
+    parser.add_argument("--version", action="version", version="intent-os 0.6.0")
 
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
@@ -359,6 +359,9 @@ def build_parser() -> argparse.ArgumentParser:
     ac.add_argument("--description", "-d", default="", help="Description of what the agent does")
     ac.add_argument("--owner", default="", help="Who owns this agent (user ID)")
     ac.add_argument("--team", default=None, help="Team ID this agent belongs to")
+    ac.add_argument("--persona", default="", help="Role description — who this agent is (e.g. 'Financial analyst')")
+    ac.add_argument("--traits", default=None, help="Comma-separated personality traits (e.g. 'cautious,analytical')")
+    ac.add_argument("--avatar", default="", help="Emoji or icon for this agent")
     ac.set_defaults(func=CMD_MAP["agent"])
     al = agent_sub.add_parser("list", help="List all registered agents")
     al.add_argument("--team", default=None, help="Filter by team ID")
@@ -375,6 +378,9 @@ def build_parser() -> argparse.ArgumentParser:
     au.add_argument("--status", default=None, help="New status (active/paused/revoked)")
     au.add_argument("--capability", action="append", default=None, help="Grant capability (repeatable)")
     au.add_argument("--policy", action="append", default=None, help="Assign policy (repeatable)")
+    au.add_argument("--persona", default=None, help="Role description (e.g. 'Financial analyst')")
+    au.add_argument("--traits", default=None, help="Comma-separated traits. Prefix + to add, - to remove (e.g. '+cautious,-aggressive')")
+    au.add_argument("--avatar", default=None, help="Emoji or icon")
     au.set_defaults(func=CMD_MAP["agent"])
     ad = agent_sub.add_parser("delete", help="Delete an agent")
     ad.add_argument("agent_id", help="Agent ID to delete")

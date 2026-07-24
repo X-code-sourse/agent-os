@@ -9,7 +9,7 @@
   <a href="https://haihaoxu.github.io/intentos/"><img src="https://img.shields.io/badge/docs-online-blue?style=flat" alt="Docs"></a>
   <a href="https://github.com/haihaoxu/intentos"><img src="https://img.shields.io/badge/github-haihaoxu/intentos-blue?style=flat&logo=github" alt="GitHub"></a>
   <a href="https://github.com/haihaoxu/intentos/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-AGPLv3-blue?style=flat" alt="License"></a>
-  <a href="https://github.com/haihaoxu/intentos/actions"><img src="https://img.shields.io/badge/tests-824%20passed-brightgreen?style=flat" alt="Tests"></a>
+  <a href="https://github.com/haihaoxu/intentos/actions"><img src="https://img.shields.io/badge/tests-834%20passed-brightgreen?style=flat" alt="Tests"></a>
 </p>
 
 ---
@@ -102,7 +102,8 @@ Intent OS gives you the answer to all four — before you even ask.
 | `intent-os cost` | Spending breakdown: by agent, by model, daily trends |
 | `intent-os proxy start` | Start recording — intercepts Claude Code, Cursor, any agent |
 | `intent-os proxy doctor` | Check proxy health: running status, traffic stats, agent detection |
-| `intent-os agent create --name "My Agent"` | Give every agent an identity — track who did what across sessions |
+| `intent-os agent create --name "My Agent"` | Give every agent a unique identity with role, traits, and avatar |
+| `intent-os agent get <id>` | Full person-card profile: role, traits, execution history, experiences |
 | `intent-os scan` | Security scan: detect dangerous tool calls and sensitive data in traces |
 | `intent-os audit report --format html` | Compliance report for teams: full audit trail with HTML/CSV export |
 
@@ -159,7 +160,7 @@ This is **Agent Accountability infrastructure.** The equivalent for autonomous A
 
 ## Tested
 
-**824 tests, 8 skipped, 0 failures** — CI across Python 3.10, 3.11, and 3.12.
+**834 tests, 8 skipped, 0 failures** — CI across Python 3.10, 3.11, and 3.12.
 
 ---
 

@@ -4,6 +4,24 @@ All notable changes to Intent OS are documented here.
 
 ---
 
+## v0.6.0 (2026-07-24)
+
+### Agent Profile — Agent as a Person
+
+- **Agent dataclass expanded** — Added `persona` (role description), `traits` (personality characteristics), and `avatar` (emoji/icon) fields. An agent is now more than an ID — it has identity, personality, and character.
+- **`agent get` person-card output** — The `agent get` command now shows a complete character card: role, traits, status, capabilities, experience summary, execution history, cost overview, and recent runs — all in one view. Identity + Execution + Experience layers now converge in a single profile.
+- **`agent update --traits +/-`** — Traits can be appended (`+cautious`), removed (`-aggressive`), or replaced (no prefix) via comma-separated syntax.
+- **`agent create --persona --traits --avatar`** — New agent creation now supports role, traits, and avatar in one command.
+- **SPEC-0009: Agent Asset Model** — First draft of the Agent Asset standard, defining the profile format as the foundation for portable `.agent` packages.
+- **CLI --version updated** — `intent-os --version` now shows 0.6.0.
+
+### Agent Store
+
+- Added `set_persona()`, `add_trait()`, `remove_trait()` methods to `AgentStore`.
+- Schema migration for existing databases (persona, traits, avatar columns).
+
+---
+
 ## v0.5.2 (2026-07-24)
 
 ### Fixes

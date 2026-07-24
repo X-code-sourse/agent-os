@@ -20,6 +20,13 @@ from typing import Any
 from core.agent_store import AgentStore
 
 
+def _parse_traits(raw: str | None) -> list[str] | None:
+    """Parse a comma-separated trait string into a list."""
+    if not raw:
+        return None
+    return [t.strip() for t in raw.split(",") if t.strip()]
+
+
 def cmd_agent(args: Any) -> None:
     """Manage AI agent identities and teams."""
     action = args.agent_action
@@ -51,9 +58,15 @@ def _cmd_create(args: Any) -> None:
     description = getattr(args, "description", "") or ""
     owner = getattr(args, "owner", "") or ""
     team_id = getattr(args, "team", None)
+    persona = getattr(args, "persona", "") or ""
+    traits_raw = getattr(args, "traits", None)
+    traits = _parse_traits(traits_raw) if traits_raw else None
+    avatar = getattr(args, "avatar", "") or ""
 
     store = AgentStore()
-    agent = store.create(name=name, description=description, owner=owner, team_id=team_id)
+    agent = store.create(name=name, description=description, owner=owner,
+                         team_id=team_id, persona=persona,
+                         traits=traits, avatar=avatar)
 
     print()
     print("  ================================================")
@@ -62,8 +75,14 @@ def _cmd_create(args: Any) -> None:
     print()
     print(f"  Agent ID:   {agent.agent_id}")
     print(f"  Name:       {agent.name}")
+    if agent.avatar:
+        print(f"  Avatar:     {agent.avatar}")
     if agent.description:
         print(f"  Description: {agent.description}")
+    if agent.persona:
+        print(f"  Role:       {agent.persona}")
+    if agent.traits:
+        print(f"  Traits:     {', '.join(agent.traits)}")
     if agent.owner:
         print(f"  Owner:      {agent.owner}")
     if agent.team_id:
@@ -100,17 +119,18 @@ def _cmd_list(args: Any) -> None:
         print(f"  Agents in Team {team_id}:")
     else:
         print("  Registered Agents:")
-    print(f"  {'Agent ID':<24} {'Name':<25} {'Status':<10} {'Team':<14}")
-    print(f"  {'-'*73}")
+    print(f"  {'Agent ID':<24} {'Name':<28} {'Avatar':<6} {'Status':<10} {'Team':<14}")
+    print(f"  {'-'*82}")
     for agent in agents:
         status = getattr(agent, "status", "active") or "?"
         team = getattr(agent, "team_id", None) or "-"
-        print(f"  {agent.agent_id:<24} {agent.name:<25} {status:<10} {team:<14}")
+        avatar = getattr(agent, "avatar", "") or "-"
+        print(f"  {agent.agent_id:<24} {agent.name:<28} {avatar:<6} {status:<10} {team:<14}")
     print()
 
 
 def _cmd_get(args: Any) -> None:
-    """Show details for a specific agent."""
+    """Show the agent's full person-card profile: identity, execution history, experiences."""
     agent_id = args.agent_id
     store = AgentStore()
     agent = store.get(agent_id)
@@ -123,28 +143,154 @@ def _cmd_get(args: Any) -> None:
         print()
         return
 
+    # ── Resolve team name ──
+    team_label = ""
+    if agent.team_id:
+        team = store.get_team(agent.team_id)
+        team_label = f" ({team['name']})" if team else ""
+
+    # ── Execution stats (from EventStore) ──
+    try:
+        from commands.helpers import get_event_store
+        event_store = get_event_store()
+        records = event_store.query_records(limit=1000)
+        agent_records = [r for r in records
+                         if r.get("agent_id") == agent_id
+                         or (isinstance(r.get("agent_name"), str) and r["agent_name"] == agent.name)]
+        total_runs = len(agent_records)
+        successes = sum(1 for r in agent_records if r.get("status") == "success")
+        failures = sum(1 for r in agent_records if r.get("status") in ("failure", "partial"))
+        total_cost = sum(r.get("total_cost_usd", 0) or 0 for r in agent_records)
+        total_tokens = sum(r.get("total_tokens", 0) or 0 for r in agent_records)
+
+        # 5 most recent executions
+        recent = sorted(agent_records,
+                        key=lambda r: r.get("created_at", "") or "",
+                        reverse=True)[:5]
+    except Exception:
+        total_runs = successes = failures = total_cost = total_tokens = 0
+        recent = []
+
+    # ── Experience stats ──
+    try:
+        from core.experience_store import ExperienceStore
+        exp_store = ExperienceStore()
+        exps = exp_store.list(agent_id=agent_id, limit=100)
+        exp_by_type: dict[str, int] = {}
+        for e in exps:
+            t = e.get("type", "unknown")
+            exp_by_type[t] = exp_by_type.get(t, 0) + 1
+        total_exps = len(exps)
+    except Exception:
+        exp_by_type = {}
+        total_exps = 0
+
+    # ── Experience type icons ──
+    _EXP_ICONS = {
+        "failure_pattern": "[-]",
+        "success_strategy": "[+]",
+        "tool_preference": "[=]",
+        "model_performance": "[M]",
+        "data_source_reliability": "[D]",
+        "environment_constraint": "[E]",
+        "user_feedback": "[U]",
+    }
+    _EXP_LABELS = {
+        "failure_pattern": "failure",
+        "success_strategy": "strategy",
+        "tool_preference": "tool_pref",
+        "model_performance": "model_perf",
+        "data_source_reliability": "data_source",
+        "environment_constraint": "env_constr",
+        "user_feedback": "feedback",
+    }
+
+    avatar_line = f" {agent.avatar}" if agent.avatar else ""
+    name_line = f"{agent.name}{avatar_line}"
+    status_icon = ">" if agent.status == "active" else "o" if agent.status == "paused" else "x"
+    last_seen_line = f"Last Run:  {agent.last_seen_at[:19]}" if agent.last_seen_at else "Last Run:  (never)"
+
     print()
-    print(f"  Agent ID:     {agent.agent_id}")
-    print(f"  Name:         {agent.name}")
-    if agent.description:
-        print(f"  Description:  {agent.description}")
+    print(f"  =================================================")
+    print(f"    Agent Profile")
+    print(f"  =================================================")
+    print()
+    print(f"  ID:           {agent.agent_id}")
+    print(f"  Name:         {name_line}")
+    if agent.persona:
+        print(f"  Role:         {agent.persona}")
     if agent.owner:
         print(f"  Owner:        {agent.owner}")
     if agent.team_id:
-        # Attempt to resolve team name
-        team = store.get_team(agent.team_id)
-        team_label = f" ({team['name']})" if team else ""
         print(f"  Team:         {agent.team_id}{team_label}")
-    capabilities = getattr(agent, "capabilities", []) or []
-    print(f"  Capabilities: {', '.join(capabilities) if capabilities else 'none'}")
-    policy_ids = getattr(agent, "policy_ids", []) or []
-    print(f"  Policies:     {', '.join(policy_ids) if policy_ids else 'none'}")
-    status = getattr(agent, "status", "active") or "?"
-    print(f"  Status:       {status}")
+    status_line = f"{status_icon}  {agent.status}"
+    if agent.status == "active":
+        status_line += " (receiving executions)"
+    print(f"  Status:       {status_line}")
+    if agent.traits:
+        print(f"  Traits:       {', '.join(agent.traits)}")
     print(f"  Created:      {agent.created_at[:19] if agent.created_at else '?'}")
-    if agent.last_seen_at:
-        print(f"  Last seen:    {agent.last_seen_at[:19]}")
+    print(f"  {last_seen_line}")
     print()
+
+    # ── Capabilities ──
+    caps = agent.capabilities or []
+    if caps:
+        print(f"  Capabilities ({len(caps)}):")
+        for c in caps:
+            print(f"    ✓ {c}")
+        print()
+
+    # ── Experiences ──
+    if total_exps > 0:
+        print(f"  Experience ({total_exps}):")
+        for etype, count in sorted(exp_by_type.items()):
+            icon = _EXP_ICONS.get(etype, "[?]")
+            label = _EXP_LABELS.get(etype, etype)
+            print(f"    {icon} {label:<18} {count}")
+        print()
+
+    # ── Execution History ──
+    success_rate = successes / total_runs if total_runs > 0 else 0
+    avg_cost = total_cost / total_runs if total_runs > 0 else 0
+    print(f"  Execution History ({total_runs} runs):")
+    if total_runs > 0:
+        bar_len = 20
+        filled = int(success_rate * bar_len)
+        bar = "#" * filled + "." * (bar_len - filled)
+        print(f"    ✓ Success:  {successes}  ({success_rate:.0%})  {bar}")
+        print(f"    ✗ Failed:   {failures}  ({(1-success_rate):.0%})")
+        print(f"    Total cost:    ${total_cost:.4f}")
+        print(f"    Avg cost/run:  ${avg_cost:.4f}")
+        print(f"    Total tokens:  {total_tokens:,}")
+    else:
+        print("    (no execution data yet)")
+    print()
+
+    # ── Recent Executions ──
+    if recent:
+        print(f"  Recent Executions:")
+        header = f"  {'Date':<22} {'Task':<30} {'Result':<10} {'Cost':<10}"
+        print(header)
+        print(f"  {'-'*(len(header)-2)}")
+        for r in recent:
+            created = (r.get("created_at") or "?")[:19]
+            task = r.get("manifest_name") or r.get("capability") or "-"
+            status_r = r.get("status", "?")
+            status_sym = "✓" if status_r == "success" else "✗" if status_r in ("failure", "partial") else "?"
+            cost = f"${r.get('total_cost_usd', 0) or 0:.2f}"
+            print(f"  {created:<22} {task:<30} {status_sym:<10} {cost:<10}")
+        print()
+
+    # ── Next steps ──
+    if total_runs == 0:
+        print(f"  This agent has no execution data yet.")
+        print(f"  Start capturing:  intent-os proxy start --agent {agent.agent_id}")
+        print()
+    else:
+        print(f"  See full execution timeline:  intent-os inspect latest --agent {agent.agent_id}")
+        print(f"  View agent experiences:       intent-os experience list --agent {agent.agent_id}")
+        print()
 
 
 def _cmd_delete(args: Any) -> None:
@@ -160,7 +306,7 @@ def _cmd_delete(args: Any) -> None:
 
 
 def _cmd_update(args: Any) -> None:
-    """Update agent fields (owner, team, status, capabilities, policies)."""
+    """Update agent fields (persona, traits, avatar, owner, team, status, capabilities, policies)."""
     agent_id = args.agent_id
     store = AgentStore()
     agent = store.get(agent_id)
@@ -169,10 +315,34 @@ def _cmd_update(args: Any) -> None:
         sys.exit(1)
 
     updates: dict[str, Any] = {}
-    for field in ("name", "description", "owner", "team_id", "status"):
+
+    # Simple field replacements
+    for field in ("name", "description", "owner", "team_id", "status", "persona", "avatar"):
         val = getattr(args, field, None)
         if val is not None:
             updates[field] = val
+
+    # Trait management: + prefix = add, - prefix = remove, no prefix = replace
+    traits_raw = getattr(args, "traits", None)
+    if traits_raw is not None:
+        parts = [t.strip() for t in traits_raw.split(",") if t.strip()]
+        add_traits = [t[1:] for t in parts if t.startswith("+") and len(t) > 1]
+        remove_traits = [t[1:] for t in parts if t.startswith("-") and len(t) > 1]
+        set_traits = [t for t in parts if not t.startswith("+") and not t.startswith("-")]
+
+        current = list(agent.traits)
+
+        if set_traits:
+            # Replace mode
+            updates["traits"] = set_traits
+        else:
+            # Add/remove mode
+            result = [t for t in current if t not in remove_traits]
+            for t in add_traits:
+                if t not in result:
+                    result.append(t)
+            if result != current:
+                updates["traits"] = result
 
     # Merge capabilities and policies if provided
     caps = getattr(args, "capability", None)
@@ -185,7 +355,7 @@ def _cmd_update(args: Any) -> None:
         updates["policy_ids"] = merged
 
     if not updates:
-        print("  No updates provided. Use --name, --owner, --status, --capability, --policy")
+        print("  No updates provided. Use --name, --persona, --traits, --avatar, --owner, --status, --capability, --policy")
         sys.exit(1)
 
     updated = store.update_agent(agent_id, **updates)
@@ -195,22 +365,27 @@ def _cmd_update(args: Any) -> None:
         print("    Agent Updated")
         print("  ================================================")
         print()
-        print(f"  Agent ID:     {updated.agent_id}")
-        print(f"  Name:         {updated.name}")
+        avatar_line = f" {updated.avatar}" if updated.avatar else ""
+        print(f"  Agent ID:  {updated.agent_id}")
+        print(f"  Name:      {updated.name}{avatar_line}")
+        if updated.persona:
+            print(f"  Role:      {updated.persona}")
+        if updated.traits:
+            print(f"  Traits:    {', '.join(updated.traits)}")
         if updated.owner:
-            print(f"  Owner:        {updated.owner}")
+            print(f"  Owner:     {updated.owner}")
         if updated.team_id:
-            print(f"  Team:         {updated.team_id}")
-        print(f"  Status:       {updated.status}")
+            print(f"  Team:      {updated.team_id}")
+        print(f"  Status:    {updated.status}")
         if updated.capabilities:
             print(f"  Capabilities: {', '.join(updated.capabilities)}")
         if updated.policy_ids:
-            print(f"  Policies:     {', '.join(updated.policy_ids)}")
+            print(f"  Policies:  {', '.join(updated.policy_ids)}")
         print()
 
 
 def _cmd_status(args: Any) -> None:
-    """Show agent execution statistics (Blueprint Phase 2.2)."""
+    """Quick execution stats for an agent."""
     from commands.helpers import get_event_store
     agent_id = args.agent_id
     store = AgentStore()
@@ -222,7 +397,6 @@ def _cmd_status(args: Any) -> None:
     event_store = get_event_store()
     records = event_store.query_records(limit=1000)
 
-    # Filter records for this agent (by agent_id column or by proxy source_agent)
     agent_records = [r for r in records
                      if r.get("agent_id") == agent_id
                      or (isinstance(r.get("agent_name"), str) and r["agent_name"] == agent.name)]
@@ -232,27 +406,30 @@ def _cmd_status(args: Any) -> None:
     total_cost = sum(r.get("total_cost_usd", 0) or 0 for r in agent_records)
     total_tokens = sum(r.get("total_tokens", 0) or 0 for r in agent_records)
 
+    avatar_line = f" {agent.avatar}" if agent.avatar else ""
+    status_icon = ">" if agent.status == "active" else "o"
     print()
-    print("  ================================================")
-    print("    Agent Status")
-    print("  ================================================")
+    print(f"  ==========================================══")
+    print(f"    Agent: {agent.name}{avatar_line}")
+    print(f"  ==========================================══")
     print()
-    print(f"  Agent ID:     {agent.agent_id}")
-    print(f"  Name:         {agent.name}")
-    print(f"  Status:       {agent.status}")
-    print(f"  Owner:        {agent.owner or '(none)'}")
-    print(f"  Team:         {agent.team_id or '(none)'}")
+    print(f"  {status_icon}  Status:       {agent.status}")
+    if agent.persona:
+        print(f"  Role:         {agent.persona}")
+    if agent.traits:
+        print(f"  Traits:       {', '.join(agent.traits)}")
     print(f"  Created:      {agent.created_at[:19]}")
     if agent.last_seen_at:
         print(f"  Last seen:    {agent.last_seen_at[:19]}")
     print()
-    print(f"  Total runs:   {total_runs}")
+    print(f"  Execution Stats:")
+    print(f"    Total runs:   {total_runs}")
     if total_runs > 0:
-        print(f"  Success rate: {successes/total_runs:.1%}")
-    print(f"  Total cost:   ${total_cost:.4f}")
-    print(f"  Total tokens: {total_tokens}")
-    if agent.capabilities:
-        print(f"  Capabilities: {', '.join(agent.capabilities)}")
+        print(f"    Success rate: {successes/total_runs:.1%}")
+    print(f"    Total cost:   ${total_cost:.4f}")
+    print(f"    Total tokens: {total_tokens:,}")
+    print()
+    print(f"  Full profile:  intent-os agent get {agent_id}")
     print()
 
 

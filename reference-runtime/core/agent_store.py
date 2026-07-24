@@ -46,7 +46,10 @@ CREATE TABLE IF NOT EXISTS agents (
     policy_ids TEXT NOT NULL DEFAULT '[]',
     status TEXT NOT NULL DEFAULT 'active',
     created_at TEXT NOT NULL,
-    last_seen_at TEXT
+    last_seen_at TEXT,
+    persona TEXT NOT NULL DEFAULT '',
+    traits TEXT NOT NULL DEFAULT '[]',
+    avatar TEXT NOT NULL DEFAULT ''
 );
 """
 
@@ -73,6 +76,10 @@ class Agent:
 
     BluePrint Layer 2 — Identity: Agent is a digital entity with
     ownership, team membership, capability grants, and a lifecycle status.
+
+    v0.6.0+: An Agent is a "person" or a social role (secretary, analyst,
+    department head).  ``persona`` describes who this agent *is*, ``traits``
+    capture its behavioural characteristics, and ``avatar`` is a visual icon.
     """
     agent_id: str
     name: str
@@ -84,6 +91,17 @@ class Agent:
     status: str = "active"       # active | paused | revoked
     created_at: str = ""
     last_seen_at: str | None = None
+    persona: str = ""            # v0.6.0 — who this agent is / role description
+    traits: list[str] = field(default_factory=list)  # v0.6.0 — ["cautious", "analytical", ...]
+    avatar: str = ""             # v0.6.0 — emoji / icon
+
+
+def _json_dumps(obj: Any) -> str:
+    """JSON-serialize *obj*, falling back to ``str()`` on failure."""
+    try:
+        return json.dumps(obj, default=str, ensure_ascii=False)
+    except (TypeError, ValueError):
+        return str(obj)
 
 
 def _row_to_agent(row: Any) -> Agent:
@@ -104,6 +122,9 @@ def _row_to_agent(row: Any) -> Agent:
         status=row["status"] if "status" in row.keys() else "active",
         created_at=row["created_at"] or "",
         last_seen_at=row["last_seen_at"] if "last_seen_at" in row.keys() and row["last_seen_at"] else None,
+        persona=row["persona"] if "persona" in row.keys() else "",
+        traits=_json_list(row["traits"]) if "traits" in row.keys() else [],
+        avatar=row["avatar"] if "avatar" in row.keys() else "",
     )
 
 
@@ -137,6 +158,16 @@ def _migrate_agents_schema(conn: Any) -> None:
     ]
     existing = {row["name"] for row in conn.execute("PRAGMA table_info(agents)")}
     for col_name, col_def in new_cols:
+        if col_name not in existing:
+            conn.execute(f"ALTER TABLE agents ADD COLUMN {col_name} {col_def}")
+
+    # v0.6.0 — persona, traits, avatar for Agent-as-Person
+    profile_cols = [
+        ("persona", "TEXT NOT NULL DEFAULT ''"),
+        ("traits", "TEXT NOT NULL DEFAULT '[]'"),
+        ("avatar", "TEXT NOT NULL DEFAULT ''"),
+    ]
+    for col_name, col_def in profile_cols:
         if col_name not in existing:
             conn.execute(f"ALTER TABLE agents ADD COLUMN {col_name} {col_def}")
 
@@ -207,7 +238,11 @@ class AgentStore:
         conn.row_factory = sqlite3.Row
         return conn
 
-    def create(self, name: str, description: str = "", owner: str = "", team_id: str | None = None) -> Agent:
+    def create(self, name: str, description: str = "", owner: str = "",
+               team_id: str | None = None,
+               persona: str = "",
+               traits: list[str] | None = None,
+               avatar: str = "") -> Agent:
         """Register a new agent with a unique ID.
 
         Args:
@@ -221,13 +256,15 @@ class AgentStore:
         """
         agent_id = f"agent_{uuid.uuid4().hex[:8]}"
         now = datetime.now(timezone.utc).isoformat()
+        trait_list = traits or []
 
         conn = self._get_conn()
         try:
             conn.execute(
-                "INSERT INTO agents (agent_id, name, description, owner, team_id, capabilities, policy_ids, status, created_at, last_seen_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (agent_id, name, description, owner, team_id, "[]", "[]", "active", now, now),
+                """INSERT INTO agents (agent_id, name, description, owner, team_id, capabilities, policy_ids, status, created_at, last_seen_at, persona, traits, avatar)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (agent_id, name, description, owner, team_id, "[]", "[]", "active", now, now,
+                 persona, _json_dumps(trait_list), avatar),
             )
             conn.commit()
         except sqlite3.IntegrityError as exc:
@@ -239,6 +276,9 @@ class AgentStore:
             agent_id=agent_id, name=name, description=description,
             owner=owner, team_id=team_id,
             created_at=now, last_seen_at=now,
+            persona=persona,
+            traits=trait_list,
+            avatar=avatar,
         )
         self._emit_event({
             "action": "agent_created",
@@ -298,11 +338,13 @@ class AgentStore:
             try:
                 conn.execute(
                     """UPDATE agents SET name=?, description=?, owner=?, team_id=?,
-                       capabilities=?, policy_ids=?, status=?
+                       capabilities=?, policy_ids=?, status=?,
+                       persona=?, traits=?, avatar=?
                        WHERE agent_id=?""",
                     (agent.name, agent.description, agent.owner, agent.team_id,
                      json.dumps(agent.capabilities), json.dumps(agent.policy_ids),
-                     agent.status, agent_id),
+                     agent.status, agent.persona,
+                     json.dumps(agent.traits), agent.avatar, agent_id),
                 )
                 conn.commit()
             finally:
@@ -330,6 +372,32 @@ class AgentStore:
             conn.commit()
         finally:
             conn.close()
+
+    # ── v0.6.0: Agent Profile helpers ──
+
+    def set_persona(self, agent_id: str, persona: str) -> bool:
+        """Set the agent's persona (role description)."""
+        return self.update_agent(agent_id, persona=persona) is not None
+
+    def add_trait(self, agent_id: str, trait: str) -> bool:
+        """Append a single trait (no-op if already present)."""
+        agent = self.get(agent_id)
+        if agent is None:
+            return False
+        if trait not in agent.traits:
+            agent.traits.append(trait)
+            return self.update_agent(agent_id, traits=agent.traits) is not None
+        return True
+
+    def remove_trait(self, agent_id: str, trait: str) -> bool:
+        """Remove a single trait (no-op if absent)."""
+        agent = self.get(agent_id)
+        if agent is None:
+            return False
+        if trait in agent.traits:
+            agent.traits.remove(trait)
+            return self.update_agent(agent_id, traits=agent.traits) is not None
+        return True
 
     def delete(self, agent_id: str) -> bool:
         """Remove an agent by ID. Returns True if deleted."""
