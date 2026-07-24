@@ -15,6 +15,8 @@ from pathlib import Path
 from typing import Any
 
 from commands.helpers import get_event_store, setup_executor, find_builtin_manifest
+from core.failure_intelligence import FailureIntelligence
+from core.cost_intelligence import CostIntelligence
 
 _project_root = Path(__file__).parent.parent
 if str(_project_root) not in sys.path:
@@ -205,6 +207,56 @@ def cmd_doctor(args: Any) -> None:
     else:
         print(f"  [?]   Last Agent Run: Unknown")
         print()
+
+    # ── Deep Diagnostics ──────────────────────────────────────
+    # Failure intelligence for failed/partial executions
+    if status in ("failed", "partial"):
+        try:
+            failure_intel = FailureIntelligence(store)
+            diagnosis = failure_intel.diagnose(trace_id=trace_id)
+            print(f"  {'─' * 48}")
+            print(f"  Failure Diagnosis")
+            print(f"  {'─' * 48}")
+            print()
+            print(f"  Root Cause:  {diagnosis['root_cause']}")
+            print(f"  Severity:    {diagnosis['severity'].upper()}")
+            if diagnosis.get("failure_chain"):
+                print(f"  Failure Chain:")
+                for step in diagnosis["failure_chain"]:
+                    print(f"    Step {step['step']}: {step['capability']} ({step['event_type']})")
+                    err = step.get("error", "")
+                    if err and err != "Unknown error":
+                        print(f"      Error: {err[:100]}")
+            print(f"  Fix:         {diagnosis['fix_suggestion']}")
+            print()
+        except Exception:
+            pass  # Failure diagnosis is best-effort -- never crash the doctor
+
+    # Cost intelligence for all executions
+    try:
+        cost_intel = CostIntelligence(store)
+        cost_report = cost_intel.analyze(trace_id=trace_id)
+        print(f"  {'─' * 48}")
+        print(f"  Cost Health Check")
+        print(f"  {'─' * 48}")
+        print()
+        print(f"  Status:      {cost_report.get('cost_health', 'unknown')}")
+        cost_usd = cost_report.get("cost_usd", 0)
+        tokens = cost_report.get("tokens", 0)
+        print(f"  Cost:        ${cost_usd:.6f}")
+        print(f"  Tokens:      {tokens:,}")
+        baseline_cost = cost_report.get("baseline_avg_cost", 0)
+        if baseline_cost > 0:
+            vs_avg = cost_report.get("cost_vs_avg_pct", 0)
+            direction = "above" if vs_avg > 0 else "below"
+            print(f"  vs Average:  {abs(vs_avg):.0f}% {direction} (avg ${baseline_cost:.6f})")
+        tips = cost_report.get("optimization_tips", [])
+        if tips and tips[0] != "Cost is within normal range. No optimization needed.":
+            for tip in tips[:2]:
+                print(f"  Tip:         {tip}")
+        print()
+    except Exception:
+        pass  # Cost analysis is best-effort -- never crash the doctor
 
     # Next step suggestion
     print()

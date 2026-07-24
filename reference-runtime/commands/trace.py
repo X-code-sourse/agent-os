@@ -12,6 +12,8 @@ from pathlib import Path
 from typing import Any
 
 from commands.helpers import get_event_store
+from core.experience_store import ExperienceStore
+from core.cost_intelligence import CostIntelligence
 
 _project_root = Path(__file__).parent.parent
 if str(_project_root) not in sys.path:
@@ -106,7 +108,289 @@ def _format_timeline(events: list[dict[str, Any]]) -> list[str]:
     return lines
 
 
-def _print_terminal(data: dict[str, Any]) -> None:
+def _print_intelligence(data: dict[str, Any], store: Any = None) -> None:
+    """Print deep execution intelligence after the timeline.
+
+    Adds bottleneck detection, efficiency scoring, comparative context,
+    replay readiness, and related experiences.
+    """
+    trace_id = data["trace_id"]
+    events = data["events"]
+    record = data["record"]
+
+    print("  " + "=" * 48)
+    print("    Execution Intelligence")
+    print("  " + "=" * 48)
+    print()
+
+    # ── 1. BOTTLENECK DETECTION ──────────────────────────────────
+    _print_bottleneck(events)
+
+    # ── 2. EFFICIENCY SCORE ─────────────────────────────────────
+    _print_efficiency(events, record)
+
+    # ── 3. COMPARATIVE CONTEXT ──────────────────────────────────
+    if store and record:
+        _print_comparative(store, record, trace_id)
+
+    # ── 4. REPLAY READINESS ─────────────────────────────────────
+    _print_replay_readiness(record, events)
+
+    # ── 5. RELATED EXPERIENCES ──────────────────────────────────
+    _print_related_experiences(record, events)
+    print()
+
+
+# ── Intelligence sub-functions ───────────────────────────────────────
+
+def _parse_event_ts(evt: dict[str, Any]) -> float | None:
+    """Parse the timestamp from an event dict, returning seconds since epoch or None."""
+    ts = evt.get("timestamp", "")
+    if not ts:
+        return None
+    import datetime as _dt
+    try:
+        # Handle both 'T' separated and space-separated timestamps
+        if "T" in str(ts):
+            if str(ts).endswith("Z"):
+                ts = str(ts)[:-1] + "+00:00"
+            dt = _dt.datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
+        else:
+            dt = _dt.datetime.strptime(str(ts)[:19], "%Y-%m-%d %H:%M:%S")
+        return dt.timestamp()
+    except (ValueError, TypeError):
+        return None
+
+
+def _print_bottleneck(events: list[dict[str, Any]]) -> None:
+    """Detect and print the execution bottleneck."""
+    if len(events) < 2:
+        return
+
+    max_gap = 0.0
+    max_gap_idx = 0
+    gaps: list[tuple[int, float]] = []
+
+    for i in range(1, len(events)):
+        t1 = _parse_event_ts(events[i - 1])
+        t2 = _parse_event_ts(events[i])
+        if t1 is not None and t2 is not None:
+            gap = t2 - t1
+            gaps.append((i, gap))
+            if gap > max_gap:
+                max_gap = gap
+                max_gap_idx = i
+
+    if max_gap <= 0:
+        print("  Bottleneck:  (all events within the same second -- no gap detected)")
+        print()
+        return
+
+    # Identify what happened at the bottleneck
+    prev_evt = events[max_gap_idx - 1] if max_gap_idx > 0 else {}
+    next_evt = events[max_gap_idx] if max_gap_idx < len(events) else {}
+
+    prev_type = prev_evt.get("event_type", "?")
+    next_type = next_evt.get("event_type", "?")
+    prev_cap = prev_evt.get("capability", "") or prev_evt.get("source", "?")
+    next_cap = next_evt.get("capability", "") or next_evt.get("source", "?")
+
+    # Check if it's a model call
+    is_model = next_type == "LlmCall"
+    note = ""
+    if is_model:
+        raw = next_evt.get("payload", "{}")
+        if isinstance(raw, str):
+            import json as _json
+            try:
+                p = _json.loads(raw)
+            except (_json.JSONDecodeError, TypeError):
+                p = {}
+        else:
+            p = raw
+        if isinstance(p, dict):
+            tokens = p.get("total_tokens") or p.get("token_count", 0)
+            if tokens:
+                note = f" ({tokens} tokens)"
+
+    # Check if it's a tool call
+    is_tool = next_type == "CapabilityInvoked"
+
+    detail = ""
+    if is_model:
+        detail = f" -- Model call to {next_cap}{note}"
+    elif is_tool:
+        detail = f" -- Tool invocation: {next_cap}"
+    elif prev_type == "LlmCall" and is_tool:
+        detail = f" -- After model call, next tool: {next_cap}"
+
+    print(f"  Bottleneck:  Step {max_gap_idx} ({max_gap:.1f}s between {prev_type} and {next_type}){detail}")
+
+    # If it's > 30s, flag it
+    if max_gap > 30:
+        print(f"               [!!] This gap is unusually large. Consider:")
+        if is_model:
+            print(f"                    - Using a faster model or reducing prompt size")
+            print(f"                    - Streaming responses to reduce perceived latency")
+        else:
+            print(f"                    - Checking if the tool has network/IO delays")
+            print(f"                    - Adding a timeout or caching results")
+    print()
+
+
+def _print_efficiency(events: list[dict[str, Any]], record: dict[str, Any] | None) -> None:
+    """Calculate and print efficiency metrics."""
+    total = len(events)
+    useful = sum(
+        1 for e in events
+        if e.get("event_type") in ("CapabilityInvoked", "TaskCompleted")
+    )
+    efficiency_pct = (useful / total * 100) if total > 0 else 0
+
+    # Output tokens per dollar
+    tokens = (record.get("total_tokens", 0) or 0) if record else 0
+    cost = (record.get("total_cost_usd", 0.0) or 0.0) if record else 0.0
+    tok_per_dollar = (tokens / cost) if cost > 0 else 0
+
+    # Efficiency bar (20 chars)
+    filled = int(efficiency_pct / 5)  # 5% per block
+    bar = "[EFFICIENCY] [" + (chr(0x2588) * filled).ljust(20) + f"] {efficiency_pct:.0f}%"
+
+    print(f"  {bar}")
+    print(f"               {useful}/{total} useful events (CapabilityInvoked + TaskCompleted)")
+    if tok_per_dollar > 0:
+        print(f"               {tok_per_dollar:,.0f} output tokens per dollar of cost")
+    elif cost == 0 and tokens > 0:
+        print(f"               {tokens:,} tokens -- cost was $0.00 (free tier / local model)")
+    print()
+
+
+def _print_comparative(store: Any, record: dict[str, Any], trace_id: str) -> None:
+    """Compare this execution against the average for the same manifest."""
+    manifest = record.get("manifest_name", "")
+    if not manifest:
+        return
+
+    siblings = store.query_records(manifest_name=manifest, limit=100)
+    # Filter out self
+    others = [s for s in siblings if s.get("trace_id") != trace_id]
+
+    if len(others) < 1:
+        print("  Comparative: (first run for this capability -- no baseline yet)")
+        print()
+        return
+
+    # Compute averages
+    avg_lat = sum(s.get("total_latency_ms", 0) or 0 for s in others) / len(others)
+    avg_cost = sum(s.get("total_cost_usd", 0) or 0 for s in others) / len(others)
+
+    this_lat = record.get("total_latency_ms", 0) or 0
+    this_cost = record.get("total_cost_usd", 0.0) or 0.0
+
+    lat_diff_pct = ((this_lat - avg_lat) / avg_lat * 100) if avg_lat > 0 else 0
+    cost_diff_pct = ((this_cost - avg_cost) / avg_cost * 100) if avg_cost > 0 else 0
+
+    faster_slower = "faster" if lat_diff_pct < 0 else "slower"
+    more_less = "less" if cost_diff_pct < 0 else "more"
+
+    print(f"  Comparative: ({len(others)} previous runs of '{manifest}')")
+    print(f"               This execution was {abs(lat_diff_pct):.0f}% {faster_slower} than your average")
+    print(f"               (avg: {avg_lat:,.0f}ms, this: {this_lat:,.0f}ms)")
+    print(f"               This execution cost {abs(cost_diff_pct):.0f}% {more_less} than average")
+    print(f"               (avg: ${avg_cost:.4f}, this: ${this_cost:.4f})")
+    print()
+
+
+def _print_replay_readiness(record: dict[str, Any] | None, events: list[dict[str, Any]]) -> None:
+    """Check and report replay readiness."""
+    if not record:
+        print("  Replay:      (no execution record)")
+        print()
+        return
+
+    has_input = record.get("input") is not None
+    has_output = record.get("output") is not None
+    has_events = len(events) > 0
+
+    missing: list[str] = []
+    if not has_input:
+        missing.append("input")
+    if not has_output:
+        missing.append("output")
+    if not has_events:
+        missing.append("events")
+
+    trace_id = record.get("trace_id", "")[:12]
+
+    if not missing:
+        print(f"  Replay:      This execution is replayable.")
+        print(f"               Run: intent-os replay {trace_id}")
+    else:
+        print(f"  Replay:      Not replayable -- missing: {', '.join(missing)}")
+        print(f"               Ensure input, output, and event data are captured.")
+    print()
+
+
+def _print_related_experiences(record: dict[str, Any] | None, events: list[dict[str, Any]]) -> None:
+    """Query the Experience Store for related experiences."""
+    if not record:
+        return
+
+    # Collect relevant identifiers to query with
+    agent_id = record.get("agent_id", "")
+    manifest = record.get("manifest_name", "")
+    capabilities: set[str] = set()
+    for evt in events:
+        cap = evt.get("capability", "")
+        if cap:
+            capabilities.add(cap)
+
+    try:
+        exp_store = ExperienceStore()
+    except Exception:
+        return  # Experience DB not available -- silently skip
+
+    experiences: list[dict[str, Any]] = []
+
+    # Query by agent_id first
+    if agent_id:
+        experiences = exp_store.list(agent_id=agent_id, limit=10)
+
+    # If nothing by agent, query by task using manifest name
+    if not experiences and manifest:
+        experiences = exp_store.query_by_task(goal=manifest, limit=5)
+
+    # Also try per-capability queries
+    if not experiences and capabilities:
+        for cap in list(capabilities)[:3]:
+            results = exp_store.query_by_task(goal=cap, limit=3)
+            for r in results:
+                if r not in experiences:
+                    experiences.append(r)
+            if len(experiences) >= 3:
+                break
+
+    if not experiences:
+        return
+
+    # Show up to 3 most relevant
+    experiences = experiences[:3]
+    print(f"  Related lessons from past executions:")
+    for exp in experiences:
+        etype = exp.get("type", "?")
+        rec = exp.get("recommendation", "")
+        conf = exp.get("confidence", 0)
+        obs = exp.get("observation", "")[:80]
+        if rec:
+            print(f"    [{etype}] {rec}")
+        elif obs:
+            print(f"    [{etype}] {obs}")
+        if conf > 0:
+            print(f"              confidence: {conf:.0%}")
+    print()
+
+
+def _print_terminal(data: dict[str, Any], store: Any = None) -> None:
     """Render trace to terminal (default output)."""
     trace_id = data["trace_id"]
     events = data["events"]
@@ -196,6 +480,10 @@ def _print_terminal(data: dict[str, Any]) -> None:
         for line in timeline:
             print(line)
         print()
+
+    # ── Deep Execution Intelligence (requires >= 3 events) ──
+    if events and len(events) >= 3:
+        _print_intelligence(data, store)
 
 
 def _export_html(data: dict[str, Any]) -> str:
@@ -341,4 +629,4 @@ def cmd_inspect(args: Any) -> None:
         print(f"Open in browser: file://{os.path.abspath(filename)}")
         return
 
-    _print_terminal(data)
+    _print_terminal(data, store)

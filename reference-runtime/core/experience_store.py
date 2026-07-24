@@ -145,7 +145,7 @@ class ExperienceStore:
     def _close_conn(self, conn: sqlite3.Connection) -> None:
         """Close a connection, unless it is the shared :memory: connection."""
         if self._db_path != ":memory:":
-            self._close_conn(conn)
+            conn.close()
 
     def _run_migrations(self, conn: sqlite3.Connection) -> None:
         """Run any pending schema migrations.
