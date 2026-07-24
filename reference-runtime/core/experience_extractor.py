@@ -49,6 +49,45 @@ from core.models import Experience
 
 _MIN_OCCURRENCES = 3          # minimum occurrences to create an Experience
 _EXP_ID_PREFIX = "exp_"       # experience ID prefix
+
+def _now_iso() -> str:
+    """Return current UTC timestamp as ISO 8601 string."""
+    from datetime import datetime, timezone
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _row_to_experience(row: dict) -> Experience:
+    """Convert a DB row dict to an Experience instance."""
+    import json as _json
+    source_data_str = row.get("source_data", "{}") or "{}"
+    try:
+        source_data = _json.loads(source_data_str)
+    except (_json.JSONDecodeError, TypeError):
+        source_data = {}
+    tags_str = row.get("tags", "[]") or "[]"
+    try:
+        tags = _json.loads(tags_str)
+    except (_json.JSONDecodeError, TypeError):
+        tags = []
+    return Experience(
+        experience_id=row.get("experience_id", ""),
+        agent_id=row.get("agent_id", ""),
+        type=row.get("type", ""),
+        observation=row.get("observation", ""),
+        recommendation=row.get("recommendation", ""),
+        confidence=float(row.get("confidence", 0.5)),
+        occurrence_count=int(row.get("occurrence_count", 0)),
+        source_data=source_data,
+        tags=list(tags) if isinstance(tags, (list, tuple)) else [],
+        created_at=row.get("created_at", "") or "",
+        structured_situation=row.get("structured_situation", "") or "",
+        structured_mistake=row.get("structured_mistake", "") or "",
+        structured_lesson=row.get("structured_lesson", "") or "",
+        structured_trigger=row.get("structured_trigger", "") or "",
+    )
+
+
+
 _EXP_ID_HEX_LEN = 12          # hex chars after prefix
 
 
@@ -187,251 +226,6 @@ CREATE_EXP_INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_exp_created ON experiences(created_at);",
 ]
 
-
-class ExperienceStore:
-    """SQLite-backed persistent store for Experience records.
-
-    Follows the same connection pattern as other Data Plane stores.
-    Each *Experience* is keyed by a unique ``experience_id`` (``exp_``
-    prefix + 12 hex chars).
-
-    Usage::
-
-        store = ExperienceStore()
-        store.save(exp)
-        existing = store.find_by_observation("agent_1", "timeout errors...")
-        all_exp = store.list_by_agent("agent_1", exp_type="failure_pattern")
-    """
-
-    def __init__(self, db_path: str | None = None) -> None:
-        if db_path is None:
-            db_path = str(Path.home() / ".intent-os" / "experiences.db")
-        self._db_path = db_path
-        Path(self._db_path).parent.mkdir(parents=True, exist_ok=True)
-        self._init_db()
-
-    def _init_db(self) -> None:
-        conn = self._get_conn()
-        conn.execute(CREATE_EXPERIENCES_TABLE)
-        # Migration: add tags column if upgrading from an older schema
-        try:
-            conn.execute(
-                "ALTER TABLE experiences ADD COLUMN tags TEXT NOT NULL DEFAULT '[]'"
-            )
-        except sqlite3.OperationalError:
-            pass  # Column already exists
-        # Migration v0.10.0: structured pattern fields
-        STRUCTURED_COLS = [
-            "structured_situation",
-            "structured_mistake",
-            "structured_lesson",
-            "structured_trigger",
-        ]
-        for col in STRUCTURED_COLS:
-            try:
-                conn.execute(
-                    f"ALTER TABLE experiences ADD COLUMN {col} TEXT NOT NULL DEFAULT ''"
-                )
-            except sqlite3.OperationalError:
-                pass  # Column already exists or table wasn't created yet
-        for idx in CREATE_EXP_INDEXES:
-            try:
-                conn.execute(idx)
-            except sqlite3.OperationalError:
-                pass
-        conn.commit()
-        conn.close()
-
-    def _get_conn(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self._db_path, timeout=30)
-        conn.row_factory = sqlite3.Row
-        return conn
-
-    # ── CRUD ────────────────────────────────────────────────────
-
-    def save(self, experience: Experience) -> None:
-        """Persist an Experience (INSERT OR REPLACE by experience_id)."""
-        conn = self._get_conn()
-        try:
-            conn.execute(
-                """INSERT OR REPLACE INTO experiences
-                   (experience_id, agent_id, type, observation, recommendation,
-                    confidence, occurrence_count, source_data, tags, created_at,
-                    structured_situation, structured_mistake,
-                    structured_lesson, structured_trigger)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                           ?, ?, ?, ?)""",
-                (
-                    experience.experience_id,
-                    experience.agent_id,
-                    experience.type,
-                    experience.observation,
-                    experience.recommendation,
-                    experience.confidence,
-                    experience.occurrence_count,
-                    _safe_json_dumps(experience.source_data),
-                    _safe_json_dumps(experience.tags),
-                    experience.created_at or _now_iso(),
-                    experience.structured_situation,
-                    experience.structured_mistake,
-                    experience.structured_lesson,
-                    experience.structured_trigger,
-                ),
-            )
-            conn.commit()
-        finally:
-            conn.close()
-
-    def find_by_observation(
-        self, agent_id: str, observation: str
-    ) -> Experience | None:
-        """Return an existing Experience whose observation text matches exactly.
-
-        Used by ``extract_all`` for deduplication.
-        """
-        conn = self._get_conn()
-        try:
-            cursor = conn.execute(
-                """SELECT * FROM experiences
-                   WHERE agent_id = ? AND observation = ?
-                   LIMIT 1""",
-                (agent_id, observation),
-            )
-            row = cursor.fetchone()
-            if row is None:
-                return None
-            return _row_to_experience(dict(row))
-        finally:
-            conn.close()
-
-    def list_by_agent(
-        self, agent_id: str, exp_type: str | None = None
-    ) -> list[Experience]:
-        """List all Experiences for an agent, optionally filtered by type."""
-        conn = self._get_conn()
-        try:
-            if exp_type:
-                cursor = conn.execute(
-                    """SELECT * FROM experiences
-                       WHERE agent_id = ? AND type = ?
-                       ORDER BY created_at DESC""",
-                    (agent_id, exp_type),
-                )
-            else:
-                cursor = conn.execute(
-                    """SELECT * FROM experiences
-                       WHERE agent_id = ?
-                       ORDER BY created_at DESC""",
-                    (agent_id,),
-                )
-            return [_row_to_experience(dict(r)) for r in cursor.fetchall()]
-        finally:
-            conn.close()
-
-    def list_all(self, exp_type: str | None = None) -> list[Experience]:
-        """List all Experiences across all agents, optionally filtered by type."""
-        conn = self._get_conn()
-        try:
-            if exp_type:
-                cursor = conn.execute(
-                    "SELECT * FROM experiences WHERE type = ? ORDER BY created_at DESC",
-                    (exp_type,),
-                )
-            else:
-                cursor = conn.execute(
-                    "SELECT * FROM experiences ORDER BY created_at DESC"
-                )
-            return [_row_to_experience(dict(r)) for r in cursor.fetchall()]
-        finally:
-            conn.close()
-
-    def delete(self, experience_id: str) -> bool:
-        """Delete a single Experience by ID. Returns True if a row was removed."""
-        conn = self._get_conn()
-        try:
-            cursor = conn.execute(
-                "DELETE FROM experiences WHERE experience_id = ?",
-                (experience_id,),
-            )
-            conn.commit()
-            return cursor.rowcount > 0
-        finally:
-            conn.close()
-
-    def update_tags(self, experience_id: str, tags: list[str]) -> bool:
-        """Replace the tags for an experience. Returns True if updated."""
-        conn = self._get_conn()
-        try:
-            cursor = conn.execute(
-                "UPDATE experiences SET tags = ? WHERE experience_id = ?",
-                (_safe_json_dumps(tags), experience_id),
-            )
-            conn.commit()
-            return cursor.rowcount > 0
-        finally:
-            conn.close()
-
-    def count(self) -> int:
-        """Total number of stored Experiences."""
-        conn = self._get_conn()
-        try:
-            cursor = conn.execute("SELECT COUNT(*) AS cnt FROM experiences")
-            return cursor.fetchone()["cnt"]
-        finally:
-            conn.close()
-
-
-# ────────────────────────────────────────────────────────────────
-# Internal helpers
-# ────────────────────────────────────────────────────────────────
-
-def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
-
-
-def _safe_json_dumps(obj: Any) -> str:
-    """Serialize *obj* to JSON, falling back to ``str(obj)`` on failure."""
-    import json as _json
-    try:
-        return _json.dumps(obj, default=str)
-    except (TypeError, ValueError):
-        return str(obj)
-
-
-def _row_to_experience(row: dict[str, Any]) -> Experience:
-    """Convert a database row dict into an Experience instance."""
-    import json as _json
-    source_data_str = row.get("source_data", "{}") or "{}"
-    try:
-        source_data = _json.loads(source_data_str)
-    except (_json.JSONDecodeError, TypeError):
-        source_data = {}
-    tags_str = row.get("tags", "[]") or "[]"
-    try:
-        tags = _json.loads(tags_str)
-    except (_json.JSONDecodeError, TypeError):
-        tags = []
-    return Experience(
-        experience_id=row["experience_id"],
-        agent_id=row["agent_id"],
-        type=row["type"],
-        observation=row["observation"],
-        recommendation=row["recommendation"],
-        confidence=row["confidence"] or 0.5,
-        occurrence_count=row["occurrence_count"] or 0,
-        source_data=source_data,
-        tags=list(tags) if isinstance(tags, (list, tuple)) else [],
-        created_at=row["created_at"] or "",
-        structured_situation=row.get("structured_situation", "") or "",
-        structured_mistake=row.get("structured_mistake", "") or "",
-        structured_lesson=row.get("structured_lesson", "") or "",
-        structured_trigger=row.get("structured_trigger", "") or "",
-    )
-
-
-# ────────────────────────────────────────────────────────────────
-# Experience Extractor
-# ────────────────────────────────────────────────────────────────
 
 class ExperienceExtractor:
     """Mines execution and evidence stores for actionable patterns.
@@ -1022,7 +816,7 @@ class ExperienceExtractor:
                 tag_prefixes = {f"context:{cid}" for cid in context_ids}
                 existing_tags = set(exp.tags)
                 exp.tags = sorted(existing_tags | tag_prefixes)
-            self._exp_store.save(exp)
+            self._exp_store.save(exp.__dict__)
             counts[key_map.get(exp.type, exp.type)] += 1
 
         return {

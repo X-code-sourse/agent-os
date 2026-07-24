@@ -675,7 +675,70 @@ class ExperienceStore:
         finally:
             conn.close()
 
-    # ── Memory management ────────────────────────────────────
+
+    def save(self, exp) -> bool:
+        """INSERT OR REPLACE an experience by experience_id.
+        
+        Accepts both dataclass instances and dicts.
+        """
+        from datetime import datetime, timezone
+        if hasattr(exp, '__dataclass_fields__'):
+            exp = exp.__dict__
+        conn = self._get_conn()
+        try:
+            conn.execute(
+                "INSERT OR REPLACE INTO experiences "
+                "(experience_id, agent_id, type, observation, recommendation, "
+                "confidence, domain, tags, created_at, usage_count, "
+                "success_rate_when_applied, expires_at, "
+                "structured_situation, structured_mistake, "
+                "structured_lesson, structured_trigger, "
+                "occurrence_count, source_data) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "
+                "?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    exp.get("experience_id", ""),
+                    exp.get("agent_id", ""),
+                    exp.get("type", ""),
+                    exp.get("observation", ""),
+                    exp.get("recommendation", ""),
+                    float(exp.get("confidence", 0.0)),
+                    exp.get("domain", ""),
+                    _json_dumps(exp.get("tags", [])),
+                    exp.get("created_at", "") or datetime.now(timezone.utc).isoformat(),
+                    int(exp.get("usage_count", 0)),
+                    float(exp.get("success_rate_when_applied", 0.0)),
+                    exp.get("expires_at"),
+                    exp.get("structured_situation", ""),
+                    exp.get("structured_mistake", ""),
+                    exp.get("structured_lesson", ""),
+                    exp.get("structured_trigger", ""),
+                    int(exp.get("occurrence_count", 0)),
+                    _json_dumps(exp.get("source_data", {})),
+                ),
+            )
+            conn.commit()
+            return True
+        except Exception:
+            return False
+        finally:
+            self._close_conn(conn)
+
+    def update_tags(self, experience_id: str, tags: list[str]) -> bool:
+        """Replace tags for an experience. Returns True if updated."""
+        conn = self._get_conn()
+        try:
+            cursor = conn.execute(
+                "UPDATE experiences SET tags = ? WHERE experience_id = ?",
+                (_json_dumps(tags), experience_id),
+            )
+            conn.commit()
+            return cursor.rowcount > 0
+        finally:
+            self._close_conn(conn)
+
+
+    # ══ Memory management ────────────────────────────────────
 
     @staticmethod
     def compute_memory_score(confidence: float, usage_count: int,

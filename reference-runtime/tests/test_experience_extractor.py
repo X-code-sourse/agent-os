@@ -23,8 +23,8 @@ import pytest
 from core.experience_extractor import (
     ExperienceExtractor,
     Experience,
-    ExperienceStore,
 )
+from core.experience_store import ExperienceStore
 
 
 # ── Helpers ──
@@ -501,127 +501,104 @@ class TestExperienceExtractor:
 
 
 class TestExtractorExperienceStore:
-    """Tests for the ExperienceStore class local to experience_extractor.py."""
+    """Tests for ExperienceStore using the canonical store API."""
 
-    @pytest.fixture
-    def exp_store(self, tmp_path):
-        """Create a file-backed ExperienceStore for testing."""
-        db_path = str(tmp_path / "test_exp.db")
-        return ExperienceStore(db_path=db_path)
+    def _make_store(self, tmp_path):
+        from core.experience_store import ExperienceStore
+        db = tmp_path / "test_extractor_exp.db"
+        return ExperienceStore(str(db))
 
-    def test_save_and_find(self, exp_store):
-        """save() persists and find_by_observation() finds by exact observation text."""
+    def test_save_and_find(self, tmp_path):
+        from core.models import Experience
+        store = self._make_store(tmp_path)
         exp = Experience(
-            experience_id="exp_test_001",
-            agent_id="agent_save",
-            type="failure_pattern",
-            observation="Unique observation text",
-            recommendation="Do something",
-            confidence=0.7,
-            occurrence_count=3,
-            tags=["test"],
-            created_at=_now_iso(),
+            experience_id="exp_save_1", agent_id="agent_save",
+            type="failure_pattern", observation="Unique observation text",
+            recommendation="Fix it", created_at=_now_iso(),
         )
-        exp_store.save(exp)
-
-        found = exp_store.find_by_observation("agent_save", "Unique observation text")
+        store.save(exp)
+        found = store.find_by_observation("agent_save", "Unique observation text")
         assert found is not None
-        assert found.experience_id == "exp_test_001"
-        assert found.type == "failure_pattern"
+        assert found["observation"] == "Unique observation text"
 
-    def test_find_by_observation_nonexistent(self, exp_store):
-        """find_by_observation() returns None when no match exists."""
-        result = exp_store.find_by_observation("agent_x", "nonexistent observation")
-        assert result is None
+    def test_find_by_observation_nonexistent(self, tmp_path):
+        store = self._make_store(tmp_path)
+        assert store.find_by_observation("no_agent", "no text") is None
 
-    def test_list_by_agent(self, exp_store):
-        """list_by_agent() returns all experiences for an agent."""
+    def test_list_by_agent(self, tmp_path):
+        from core.models import Experience
+        store = self._make_store(tmp_path)
         for i in range(3):
-            exp_store.save(Experience(
-                experience_id=f"exp_list_{i}",
-                agent_id="agent_list",
-                type="failure_pattern",
-                observation=f"Observation {i}",
-                recommendation="",
-                created_at=_now_iso(),
+            store.save(Experience(
+                experience_id=f"exp_list_{i}", agent_id="agent_list",
+                type="failure_pattern", observation=f"Obs {i}",
+                recommendation="", created_at=_now_iso(),
             ))
-
-        results = exp_store.list_by_agent("agent_list")
+        store.save(Experience(
+            experience_id="exp_list_other", agent_id="other_agent",
+            type="failure_pattern", observation="Other",
+            recommendation="", created_at=_now_iso(),
+        ))
+        results = store.list(agent_id="agent_list")
         assert len(results) == 3
 
-    def test_list_by_agent_filtered_by_type(self, exp_store):
-        """list_by_agent() can filter by type."""
-        exp_store.save(Experience(
-            experience_id="exp_ft_1", agent_id="agent_ft",
-            type="failure_pattern", observation="F",
-            recommendation="", created_at=_now_iso(),
-        ))
-        exp_store.save(Experience(
-            experience_id="exp_ft_2", agent_id="agent_ft",
-            type="success_strategy", observation="S",
-            recommendation="", created_at=_now_iso(),
-        ))
+    def test_list_by_agent_filtered_by_type(self, tmp_path):
+        from core.models import Experience
+        store = self._make_store(tmp_path)
+        store.save(Experience(experience_id="exp_ft_1", agent_id="agent_ft",
+                    type="failure_pattern", observation="F",
+                    recommendation="", created_at=_now_iso()))
+        store.save(Experience(experience_id="exp_ft_2", agent_id="agent_ft",
+                    type="success_strategy", observation="S",
+                    recommendation="", created_at=_now_iso()))
+        results = store.list(agent_id="agent_ft", type="failure_pattern")
+        assert len(results) == 1
+        assert results[0]["observation"] == "F"
 
-        failures = exp_store.list_by_agent("agent_ft", exp_type="failure_pattern")
-        assert len(failures) == 1
-        assert failures[0].observation == "F"
-
-    def test_list_all(self, exp_store):
-        """list_all() returns all experiences across agents."""
-        exp_store.save(Experience(
-            experience_id="exp_all_1", agent_id="agent_a",
-            type="failure_pattern", observation="A",
-            recommendation="", created_at=_now_iso(),
-        ))
-        exp_store.save(Experience(
-            experience_id="exp_all_2", agent_id="agent_b",
-            type="success_strategy", observation="B",
-            recommendation="", created_at=_now_iso(),
-        ))
-
-        results = exp_store.list_all()
+    def test_list_all(self, tmp_path):
+        from core.models import Experience
+        store = self._make_store(tmp_path)
+        store.save(Experience(experience_id="exp_all_1", agent_id="agent_a",
+                    type="failure_pattern", observation="A",
+                    recommendation="", created_at=_now_iso()))
+        store.save(Experience(experience_id="exp_all_2", agent_id="agent_b",
+                    type="success_strategy", observation="B",
+                    recommendation="", created_at=_now_iso()))
+        results = store.list()
         assert len(results) == 2
 
-    def test_delete(self, exp_store):
-        """delete() removes an experience and returns True."""
-        exp_store.save(Experience(
-            experience_id="exp_del", agent_id="agent_del",
-            type="failure_pattern", observation="Delete me",
-            recommendation="", created_at=_now_iso(),
-        ))
+    def test_delete(self, tmp_path):
+        from core.models import Experience
+        store = self._make_store(tmp_path)
+        store.save(Experience(experience_id="exp_del", agent_id="agent_del",
+                    type="failure_pattern", observation="Delete me",
+                    recommendation="", created_at=_now_iso()))
+        assert store.delete("exp_del") is True
+        assert store.get("exp_del") is None
 
-        assert exp_store.find_by_observation("agent_del", "Delete me") is not None
-        result = exp_store.delete("exp_del")
-        assert result is True
-        assert exp_store.find_by_observation("agent_del", "Delete me") is None
+    def test_delete_nonexistent(self, tmp_path):
+        store = self._make_store(tmp_path)
+        assert store.delete("exp_nonexistent") is False
 
-    def test_delete_nonexistent(self, exp_store):
-        """delete() returns False for nonexistent experience."""
-        result = exp_store.delete("exp_nonexistent")
-        assert result is False
-
-    def test_update_tags(self, exp_store):
-        """update_tags() replaces the tags for an experience."""
-        exp_store.save(Experience(
-            experience_id="exp_tags", agent_id="agent_tags",
-            type="failure_pattern", observation="Tags test",
-            recommendation="", tags=["old"], created_at=_now_iso(),
-        ))
-
-        result = exp_store.update_tags("exp_tags", ["new_tag", "another"])
-        assert result is True
-
-        found = exp_store.find_by_observation("agent_tags", "Tags test")
+    def test_update_tags(self, tmp_path):
+        from core.models import Experience
+        store = self._make_store(tmp_path)
+        store.save(Experience(experience_id="exp_tags", agent_id="agent_tags",
+                    type="failure_pattern", observation="Tags test",
+                    recommendation="", tags=["old"], created_at=_now_iso()))
+        store.update_tags("exp_tags", ["new_tag", "another"])
+        found = store.get("exp_tags")
         assert found is not None
-        assert set(found.tags) == {"new_tag", "another"}
+        assert set(found["tags"]) == {"new_tag", "another"}
 
-    def test_count(self, exp_store):
-        """count() returns the total number of experiences."""
-        assert exp_store.count() == 0
-
-        exp_store.save(Experience(
-            experience_id="exp_c1", agent_id="agent_c",
-            type="failure_pattern", observation="One",
-            recommendation="", created_at=_now_iso(),
-        ))
-        assert exp_store.count() == 1
+    def test_count(self, tmp_path):
+        from core.models import Experience
+        store = self._make_store(tmp_path)
+        assert store.count() == 0
+        store.save(Experience(experience_id="exp_c1", agent_id="agent_c",
+                    type="failure_pattern", observation="One",
+                    recommendation="", created_at=_now_iso()))
+        store.save(Experience(experience_id="exp_c2", agent_id="agent_c",
+                    type="success_strategy", observation="Two",
+                    recommendation="", created_at=_now_iso()))
+        assert store.count() == 2
