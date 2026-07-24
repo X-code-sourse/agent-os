@@ -50,9 +50,9 @@ Claude Code spends 30 minutes solving your problem — researching, trying appro
 
 This is the real bottleneck in AI today. Not capability. **Amnesia.**
 
-Intent OS is the flight recorder — and the long-term memory — for your AI agents. It records everything they do, turns it into structured experience, and gives them an identity that persists across sessions.
+Intent OS gives your AI agent a memory that grows with every task. Every execution, every mistake, every success is captured, structured as experience, and applied to the next call. Day by day, your agent gets smarter — not because the model changed, but because it remembers what worked and what didn’t.
 
-Even better: that identity — role, traits, execution history, experience — can one day move with them across runtimes. From Claude to Codex to whatever comes next. Your agent doesn't have to start over when you switch tools.
+Even better: that identity — role, traits, execution history, experience, capability proof — can be exported today and moved across any runtime. From Claude to GPT to Ollama. Your agent doesn’t have to start over when you switch tools. It carries everything it learned.
 
 ---
 
@@ -134,28 +134,13 @@ No API key to sign up. No dashboard to log into. Your agent's execution data is 
 
 ---
 
-## The bigger picture: an agent that grows with you
+## The bigger picture: agents that grow with you
 
-Intent OS is not just a tool. It is the first implementation of a **portable execution contract for AI agents** — the missing layer that lets an Agent be defined, executed, verified, and moved across any runtime.
+Intent OS is the first infrastructure layer that turns AI agents from one-time tools into assets that accumulate value over time. Every task your agent completes adds to its identity, capability proof, and experience. Run it for a week, and it is smarter than day one. Run it for a month, and it knows your workflows, your preferences, your data sources. Export it, and that value moves with it to any runtime.
 
-```
-                    Agent Capability
-                          │
-                    ┌─────▼──────┐
-                    │  Execution  │
-                    │  Contract   │  ← Intent OS
-                    └─────┬──────┘
-                          │
-         ┌────────────────┼────────────────┐
-         │                │                │
-    Claude RT       OpenAI RT        Ollama RT
-```
+The seven layers of Intent OS - Context, Identity, Execution, Verification, Governance, Interoperability, Experience - form the infrastructure for an agent that does not just execute, but learns, proves, and carries its value forward.
 
-The seven layers of Intent OS — Context, Identity, Execution, Verification, Governance, Interoperability, Experience — are the components of this contract. Together they answer the questions any organization must ask of an autonomous system: who was it, what was it supposed to do, what did it do, what evidence did it have, what did it learn, and who authorized it.
-
-This is **Agent Accountability infrastructure.** The equivalent for autonomous AI of what audit trails are to finance and what version control is to software.
-
-[7 specs](https://github.com/haihaoxu/intentos/tree/main/specs), all frozen. 26 event types. 6 adapters. One contract. Any runtime.
+[9 specs](https://github.com/haihaoxu/intentos/tree/main/specs), all frozen. 30+ CLI commands. 6 adapters. One local file. Any runtime.
 
 ---
 
@@ -173,4 +158,4 @@ Open-source use is free under AGPLv3. Commercial use requires a commercial licen
 
 ---
 
-*Your agent doesn't have to start over every day. Give it a life.*
+*Your agent doesn't have to start over every day. Every task makes it better.*

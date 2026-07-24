@@ -1,8 +1,10 @@
 # The Agent Execution Contract
 
-> **Intent OS is building the portable execution contract for AI agents — the missing layer between Agent Capabilities and Runtimes.**
+> **Intent OS is building the portable execution contract for AI agents — the infrastructure layer that lets agents accumulate value over time and carry it across any runtime.**
 >
 > Status: Frozen v1.0 — 2026-07-24
+>
+> Agents should get better with every task. Intent OS makes that possible.
 
 ---
 

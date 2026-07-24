@@ -50,9 +50,9 @@ Claude Code spends 30 minutes solving your problem — researching, trying appro
 
 This is the real bottleneck in AI today. Not capability. **Amnesia.**
 
-Intent OS is the flight recorder — and the long-term memory — for your AI agents. It records everything they do, turns it into structured experience, and gives them an identity that persists across sessions.
+Intent OS gives your AI agent a memory that grows with every task. Every execution, every mistake, every success is captured, structured as experience, and applied to the next call. Day by day, your agent gets smarter.
 
-Even better: that identity — role, traits, execution history, experience — can one day move with them across runtimes. From Claude to Codex to whatever comes next. Your agent doesn't have to start over when you switch tools.
+That identity — role, traits, execution history, experience, capability proof — can be exported today and moved across any runtime. From Claude to GPT to Ollama. Your agent doesn't have to start over when you switch tools. It carries everything it learned.
 
 ---
 
@@ -151,4 +151,4 @@ Open-source use is free under AGPLv3. Commercial use requires a commercial licen
 
 ---
 
-*Your agent doesn't have to start over every day. Give it a life.*
+*Your agent doesn't have to start over every day. Every task makes it better.*

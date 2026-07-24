@@ -74,8 +74,8 @@ def build_parser() -> argparse.ArgumentParser:
     """Build the CLI argument parser."""
     parser = argparse.ArgumentParser(
         prog="intent-os",
-        description="Intent OS Reference Runtime - Open AI Capability Interoperability",
-        epilog="Phase 0 - Prove that one Manifest can run on multiple runtimes.",
+        description="Give your AI agent a memory that grows with every task. Capture, learn, and carry experience across any runtime.",
+        epilog="Your agent doesn't have to start over every day. Every task makes it better.",
     )
     parser.add_argument("--version", action="version", version="intent-os 0.15.1")
 
