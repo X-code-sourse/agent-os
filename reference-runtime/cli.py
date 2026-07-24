@@ -77,7 +77,7 @@ def build_parser() -> argparse.ArgumentParser:
         description="Intent OS Reference Runtime - Open AI Capability Interoperability",
         epilog="Phase 0 - Prove that one Manifest can run on multiple runtimes.",
     )
-    parser.add_argument("--version", action="version", version="intent-os 0.15.0")
+    parser.add_argument("--version", action="version", version="intent-os 0.15.1")
 
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
