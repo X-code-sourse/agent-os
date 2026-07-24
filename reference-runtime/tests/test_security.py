@@ -1038,7 +1038,12 @@ class TestEventEmission:
         assert payload["capability"] == "unknown.x"
 
     def test_sequence_increments_across_calls(self, store: PolicyStore):
-        """Each evaluate() call increments the sequence number."""
+        """Each evaluate() call is independent — no shared sequence counter.
+
+        Since SPEC-0004 R1 requires the SecurityManager to be stateless,
+        every evaluation gets its own fresh trace_id and event with
+        sequence=1 (a standalone event, not part of a larger trace).
+        """
         event_store = MagicMock()
         manager = SecurityManager(policy_store=store, event_store=event_store)
 
@@ -1049,7 +1054,7 @@ class TestEventEmission:
         calls = event_store.save_event.call_args_list
         assert len(calls) == 3
         sequences = [c[0][0].sequence for c in calls]
-        assert sequences == [1, 2, 3]
+        assert sequences == [1, 1, 1]  # each is a standalone event
 
     def test_event_trace_id_included(self, store: PolicyStore):
         """Events carry the manager's trace_id (or a generated UUID)."""

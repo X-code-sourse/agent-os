@@ -1,7 +1,12 @@
 """Intent OS — Agent Hook Tracer: records LLM API calls to Event Store.
 
 Detects the source AI agent (Claude Code, Cursor, Copilot, etc.)
-from HTTP headers and creates structured execution records.
+from HTTP headers and creates structured ``LlmCall`` events
+(``EventType.LLM_CALL`` — distinct from ``CapabilityInvoked`` which
+tracks Manifest-based executions).
+
+Each captured call records provider, model, token usage, cost,
+latency, and source agent identity.
 """
 from __future__ import annotations
 
@@ -91,8 +96,10 @@ def estimate_cost(model: str, input_tokens: int, output_tokens: int) -> float:
 class AgentTracer:
     """Records LLM API calls (OpenAI / Anthropic) to the Intent OS Event Store.
 
-    Each API call is recorded as a ``CapabilityInvoked`` event with
+    Each API call is recorded as an ``LlmCall`` event with
     provider, model, tokens, cost, latency, and source agent info.
+    This is distinct from ``CapabilityInvoked``, which tracks
+    Manifest-based capability executions.
     """
 
     def __init__(self, store: EventStore | None = None) -> None:
@@ -144,7 +151,7 @@ class AgentTracer:
         event = Event(
             event_id=str(uuid.uuid4()),
             trace_id=self.trace_id,
-            event_type=EventType.CAPABILITY_INVOKED,
+            event_type=EventType.LLM_CALL,
             timestamp=datetime.now(timezone.utc),
             source="proxy",
             sequence=0,

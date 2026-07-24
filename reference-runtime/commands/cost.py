@@ -61,9 +61,16 @@ def cmd_cost(args: Any) -> None:
     if not all_ids:
         print("  No execution data found.")
         print()
-        print("  Run a capability or start the proxy to collect data:")
-        print("    intent-os run translate -p text=hello -p target_lang=zh")
-        print("    intent-os proxy start")
+        print("  To begin tracking costs:")
+        print()
+        print("    1. Start the proxy to intercept API calls:")
+        print("       intent-os proxy start")
+        print()
+        print("    2. Point your agent to the proxy:")
+        print("       export OPENAI_BASE_URL=http://localhost:8377")
+        print("       export ANTHROPIC_BASE_URL=http://localhost:8377")
+        print()
+        print("    3. Use your AI agent — costs will be tracked automatically.")
         print()
         return
 
@@ -102,7 +109,7 @@ def cmd_cost(args: Any) -> None:
             etype = evt.get("event_type", "")
             capability = evt.get("capability", "")
 
-            if etype == "CapabilityInvoked" and capability and capability.startswith("llm."):
+            if etype in ("LlmCall", "CapabilityInvoked") and capability and capability.startswith("llm."):
                 payload = _parse_payload(evt.get("payload", "{}"))
                 source_agent = payload.get("source_agent", "unknown")
                 model = payload.get("model", capability.replace("llm.", "", 1))

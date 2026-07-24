@@ -1,59 +1,74 @@
 # SPEC-0004: Security Model
 
-> **Status:** Design Draft v0.1 — Phase 2 (Placeholder in Phase 0/1)
-> **Scope:** Defines permission, authentication, authorization, and audit model for Intent OS
-> **Editor:** Security Architect — Intent OS Project
+> **Status:** v1.0 — Matches reference-runtime v0.4.3 Phase 0 implementation
+> **Scope:** Security policy evaluation, tool-call guard, post-execution audit/scanning
 
 ---
 
-## 1. Purpose
+## 1. Status
 
-The Security Model defines **how AI capability execution is secured** — how permissions are declared, enforced, audited, and governed. It answers one question:
-
-> **Who can do what, under what conditions, and how is it recorded?**
-
-Intent OS's security model is unique because it operates at the **interoperability layer**, not within a single runtime. It must work across OpenAI, Anthropic, Ollama, and future runtimes — each with their own security models and trust boundaries.
-
-### 1.1 Design Constraints from the Constitution
-
-This spec is designed within the following inviolable constraints:
-
-| Constraint | Implication for Security |
-|---|---|
-| **R1: Control Plane Owns No State** | Security Manager (Control Plane) evaluates policies but never stores them. Policies are stored in Metadata Plane, evaluation results flow to Data Plane via Event Bus. |
-| **R2: No Direct Inter-Processor Communication** | All security checks must route through the Scheduler. Processors cannot bypass security by invoking each other directly. |
-| **R3: Event Bus is Single Source of Truth** | Every security decision — allow, deny, escalate, require approval — is recorded as an Event. No audit trail exists outside Events. |
-| **R4: Capabilities are Stateless** | A capability carries its security *declaration* (risk level, required permissions) but never maintains security *state*. |
-
-### 1.2 Scope Boundaries
-
-**In scope:**
-- Permission declaration format (in Capability Manifest)
-- Policy evaluation flow (enforcement architecture)
-- Human approval gates (Review workflow)
-- Audit trail via Event Schema
-- Organizational policy overrides
-- Capability-level privilege separation
-
-**Out of scope (not part of this spec):**
-- ❌ Model-level security (ML model safety, alignment, jailbreak prevention)
-- ❌ Transport security (TLS, mTLS — delegated to deployment infrastructure)
-- ❌ API key management (adapter-specific, not interoperability concern)
-- ❌ User authentication (delegated to the consuming application)
-- ❌ MCP server authentication (handled by MCP protocol)
-- ❌ Confidential computing / TEE integration (Phase 3+)
+This spec describes the **Phase 0 (current)** implementation. The security model is deliberately minimal: a synchronous, SQLite-backed policy evaluator with optional event emission. It does NOT include event-driven pub/sub policy resolution, layered overrides, manifest signing, human-in-the-loop review, or audit mode. Those are documented in [Section 12 (Phase 2+ Roadmap)](#12-phase-2-roadmap) and do **not** exist in the current codebase.
 
 ---
 
-## 2. Design Principles
+## 2. Purpose
 
-### P1: Declare, Don't Enforce
+The Security Model answers one question for Phase 0:
 
-A Capability Manifest **declares** its security requirements (risk level, required permissions, network access). The runtime **enforces** them. The Manifest cannot contain enforcement logic. This keeps Manifests portable — the same Manifest running on a strict enterprise runtime and a permissive development runtime behaves within different policy bounds.
+> **Should this capability invocation be allowed, denied, or flagged for review?**
 
-### P2: Layered Overrides
+It operates at the **interoperability layer** — the same policy evaluation logic applies whether a capability runs via OpenAI, Anthropic, Ollama, or a future runtime. It does NOT perform model-level safety, transport security, API key management, or user authentication.
 
-Security is evaluated in layers, with each layer able to restrict but never expand:
+### 2.1 Scope Boundaries
+
+**In scope (implemented):**
+- Policy evaluation engine (`SecurityManager.evaluate()`) — synchronous, pure-function decision tree
+- Policy storage (`PolicyStore`) — flat SQLite CRUD, versioned per policy
+- Proxy tool-call guard (`ToolCallGuard`) — inspects LLM responses for dangerous tool calls
+- Policy CLI commands (`security policy list/get/apply`, `security evaluate`, `security audit`)
+- Post-execution scanning (`intent-os scan`) — traces in Event Store
+- Audit reporting (`intent-os audit`) — execution records with cost/agent/model tracking
+- `PolicyEvaluated` event emission (optional, via EventStore)
+
+**Out of scope (Phase 2+, not implemented):**
+- Event-driven pub/sub policy resolution
+- Layered overrides (org -> user -> runtime)
+- Manifest signing (ed25519 or other)
+- `data_access_scope` with glob patterns
+- Permission descriptors with scope/constraints
+- Human-in-the-loop review flow (review events are defined but never emitted)
+- Audit mode (log-only, no enforcement)
+- Review expiration/timeout
+- Policy specificity sorting
+- Trust anchors / publisher allowlists
+- `SecurityPolicy` YAML format with `kind`/`applies_to`
+
+---
+
+## 3. Design Principles
+
+### P1: Declare, Don't Enforce (Current)
+
+A capability declares its risk level and required permissions. The SecurityManager evaluates these declarations against stored policies. The capability manifest contains no enforcement logic.
+
+### P2: Stateless Evaluation (Current)
+
+`SecurityManager` holds no mutable evaluation state. Every `evaluate()` call is a pure function of `(policy_snapshot, capability_spec, context) -> decision`. This means:
+- Any SecurityManager instance can evaluate any request
+- Crash recovery requires no state restoration
+- Evaluations are deterministic given the same inputs
+
+### P3: Deny-by-Default (Current)
+
+If no policy matches a capability name, the result is DENY. This is the security-conservative choice: capabilities must have explicit policy coverage to execute.
+
+### P4: Policy Versioning (Current)
+
+Every update to a policy increments its `version` field. Policies have `created_at` and `updated_at` timestamps. The PolicyStore retains all versions via upsert semantics.
+
+### P5: Layered Overrides (Future — Phase 2+)
+
+This principle is documented for design intent but is **not implemented**. The intended model is:
 
 ```
 Capability Self-Declared Risk  ← most permissive
@@ -65,651 +80,622 @@ User Consent                   ← can restrict
 Runtime Defaults               ← most restrictive (deny-by-default)
 ```
 
-A capability that self-declares `risk: low` cannot be expanded to `risk: high` by any layer. But a `risk: high` capability can be blocked by organizational policy.
+### P6: Audit-Before-Enforce (Future — Phase 2+)
 
-### P3: Audit-Before-Enforce (Phase 2+)
-
-In Phase 2, the system should support "audit mode": log all policy decisions without enforcing them. This allows organizations to discover what their AI capabilities are actually doing before writing restrictive policies. This is the security equivalent of "observe before control."
-
-### P4: Capability Least Privilege
-
-Each capability should declare the minimum permissions it needs. The runtime should have defaults for common patterns:
-- Read-only text processing → no special permissions
-- Web search → `network: true`
-- File system write → `require_approval: true`
+The intended "audit mode" (log decisions without enforcing) does not exist. Currently, the only audit capability is post-execution via `intent-os audit` and `intent-os scan`.
 
 ---
 
-## 3. Architecture
+## 4. Architecture
 
-### 3.1 Security Components in the Five-Plane Architecture
+### 4.1 Synchronous Evaluation Flow (Current)
 
-```
-┌──────────────────────────────────┐
-│ User Plane                       │
-│  - User consent dialogs          │
-│  - Human approval workflows      │
-└──────────────┬───────────────────┘
-               │ Event Bus
-┌──────────────▼───────────────────┐
-│ Control Plane                    │
-│  Planner / Execution Engine      │
-│  ┌──────────────────────────┐    │
-│  │   Security Manager       │    │  ← Policy evaluation engine
-│  │   - Policy Evaluator     │    │     OWNS NO STATE (R1)
-│  │   - Consent Delegator    │    │
-│  └──────────────────────────┘    │
-└──────────────┬───────────────────┘
-               │ Event Bus
-┌──────────────▼───────────────────┐
-│ Metadata Plane                   │
-│  ┌──────────────────────────┐    │
-│  │   Policy Store           │    │  ← Policies live here, not in Control Plane
-│  │   - Org policies         │    │
-│  │   - User preferences     │    │
-│  │   - Trust anchors        │    │
-│  └──────────────────────────┘    │
-└──────────────┬───────────────────┘
-┌──────────────▼───────────────────┐
-│ Data Plane                       │
-│  ┌──────────────────────────┐    │
-│  │   Audit Log (Event Store)│    │  ← All decisions recorded
-│  │   - PolicyEvaluated      │    │
-│  │   - ReviewRequired       │    │
-│  │   - ReviewCompleted      │    │
-│  └──────────────────────────┘    │
-└──────────────┬───────────────────┘
-┌──────────────▼───────────────────┐
-│ Runtime Plane                    │
-│  - Enforcement hooks per adapter │
-│  - Capability risk constraints   │
-└──────────────────────────────────┘
-```
-
-### 3.2 Policy Evaluation Flow
+The SecurityManager performs **direct synchronous evaluation** — it does NOT use pub/sub or event-driven resolution. The caller provides the capability spec directly; the manager loads policies from a local SQLite database and returns a decision.
 
 ```
-                        ┌──────────────┐
-                        │   Planner    │
-                        │ (identifies  │
-                        │  capability) │
-                        └──────┬───────┘
-                               │ requests execution
-                               ▼
-                  ┌──────────────────────┐
-                  │   Security Manager   │
-                  │                      │
-                  │ 1. Load capability   │──→ Metadata Plane (fetch Manifest)
-                  │    manifest security │
-                  │ 2. Load org policies │──→ Metadata Plane (Policy Store)
-                  │ 3. Evaluate          │
-                  │    a) Is capability  │
-                  │       explicitly     │
-                  │       blocked?       │
-                  │    b) Is risk level  │
-                  │       within policy  │
-                  │       bounds?        │
-                  │    c) Does workflow  │
-                  │       context match  │
-                  │       policy scope?  │
-                  │ 4. Determine action  │
-                  │    - ALLOW           │──→ proceed to executor
-                  │    - DENY            │──→ block + record
-                  │    - REQUIRE_REVIEW  │──→ escalate to User Plane
-                  │                      │
-                  │ 5. Record decision   │──→ Event Bus → Data Plane
-                  └──────────────────────┘
+Caller (Planner, Proxy Guard, or CLI)
+  │
+  │  manager.evaluate(capability={name, risk, ...}, context={...})
+  ▼
+SecurityManager
+  │
+  │  1. policy_store.get_for_capability(name)   ──► PolicyStore (SQLite)
+  │     ↓ matching policies
+  │  2. Decision tree (see Section 4.2)
+  │  3. Optionally emit PolicyEvaluated event     ──► EventStore
+  │
+  ▼
+EvaluationResult(decision, rationale, policy_id, risk_level, capability_name)
 ```
 
-### 3.3 Key Architectural Rule: Evaluation Without State
+Key differences from the aspirational event-driven design:
+- **No `PolicyQueryRequest`/`PolicyQueryResponse` events.** The manager queries SQLite directly.
+- **No Capability Manifest fetch.** The caller provides `SecuritySpec` (name, risk, permissions_required, review_required, allowed_contexts) — the manager never reaches into the Metadata Plane to load a manifest.
+- **No pub/sub.** Policies are loaded via synchronous SQLite queries.
 
-The Security Manager evaluates policy but never stores it. The full flow is stateless:
+### 4.2 Decision Tree (Precise Order)
+
+The `SecurityManager.evaluate()` decision tree runs in this exact order:
 
 ```
-Security Manager receives "evaluate(capability, context)" request
-  → emits PolicyQueryRequest Event (Event Bus → Metadata Plane)
-  → Metadata Plane responds with PolicyQueryResponse Event containing capability security declaration + applicable policies
-  → evaluates declaratively (pure function of inputs: capability.security + policies + context)
-  → emits PolicyEvaluated Event with: decision, rationale, policy_id
-  → returns decision to caller
-  → does NOT cache, does NOT store, does NOT maintain session state
+Phase A — Policy-driven checks (require at least one matching policy):
 
-Security Manager never queries the Event Bus directly. The Event Bus is a message-passing medium, not a queryable store. All information flows through the publish/subscribe pattern: Security Manager publishes a request event, Metadata Plane subscribers respond with a response event. This preserves R1 (Control Plane owns no state — responses are transient messages, not stored state) and R3 (Event Bus is single source of truth — the request/response pair is recorded as Events).
+  A1. Explicit DENY rule in ANY matching policy
+      → DENY (final, cannot be overridden by any subsequent check)
+
+  A2. Explicit ALLOW rule in any matching policy
+      → ALLOW (overrides review threshold)
+      → Track _explicit_allowed flag to prevent A3 from upgrading to REVIEW
+
+  A3. Review threshold exceeded
+      → If policy.review_rules["require_review_for"] contains
+        effective_risk.value → REQUIRE_REVIEW
+
+      NOTE: Skipped if A2 found an explicit allow.
+      NOTE: "require_review_for" is a list of risk level strings,
+            e.g. ["high", "critical"]. There is no timeout or
+            escalation — REQUIRE_REVIEW is an informational
+            signal, not a blocking state with a review workflow.
+
+  A4. Fallthrough — at least one policy matched with no deny/allow/review rule
+      → ALLOW (attributed to first matching policy)
+
+Phase B — Spec-level and default checks (run regardless of policy presence):
+
+  B1. spec.review_required == True (and not already DENY)
+      → REQUIRE_REVIEW
+
+  B2. No policies matched at all
+      → DENY (default deny)
+
+  B3. Context restrictions (spec.allowed_contexts is non-empty, not already DENY)
+      → If context keys don't match allowed_contexts glob patterns → DENY
 ```
 
-This enables:
-- **Deterministic replays**: replay the same events and get the same policy decisions
-- **Distributed deployment**: any Security Manager instance can evaluate any request
-- **Zero state recovery**: crash recovery requires no security state restoration
+### 4.3 Effective Risk Calculation
 
----
-
-## 4. Capability Manifest Security Declaration
-
-### 4.1 Existing Fields
-
-The Capability Manifest (SPEC-0001) already defines a `security` section:
-
-```yaml
-spec:
-  security:
-    risk: low                         # low | medium | high | critical
-    network: true                     # Does this capability make network calls?
-    data_access: false                # Does this access user/organization data?
-    require_approval: false           # Does this require human approval?
-```
-
-**Phase 2 additions:**
-
-```yaml
-spec:
-  security:
-    risk: medium
-    network: true
-    data_access: true
-    require_approval: false
-
-    # ── New in Phase 2 ──
-
-    # Declares what user data the capability accesses
-    data_access_scope:                # Optional. Describes data access patterns
-      reads:
-        - files: ["*.md", "*.txt"]   # Glob patterns for files read
-        - env: ["USER", "HOME"]       # Environment variables read
-        - api_endpoints: []           # API endpoints called (network: true implied)
-      writes:
-        - files: ["output/*"]         # Glob patterns for files written
-        - api_endpoints: []           # API endpoints modified
-
-    # Declares required permissions beyond defaults
-    permissions:                      # Optional. Extended permission requests
-      - id: filesystem_write
-        scope: "output/*"
-        description: "Write generated reports to output directory"
-        optional: true                # Capability can degrade if permission denied
-      - id: email_send
-        description: "Send notification email"
-        optional: false               # Capability cannot function without this
-
-    # Declares trust requirements
-    trust:                            # Optional. Trust and verification requirements
-      require_signed_manifest: false  # Require manifest to be digitally signed
-      allowed_publishers: []          # Empty = any publisher allowed
-      min_approval_level: "user"      # none | user | admin | compliance
-```
-
-### 4.3 Versioning Strategy
-
-The Phase 2 additions above extend `spec.security` with optional fields. Per SPEC-0001 Section 6:
-
-| Change | Version Bump |
-|---|---|
-| Add optional field to `spec.security` | **MINOR** — backward-compatible |
-| Add required field to `spec.security` | **MAJOR** — breaks existing manifests |
-| Remove a field from `spec.security` | **MAJOR** — breaks consumers |
-| Change default value of an existing field | **MINOR** — documented in release notes |
-
-Since all Phase 2 additions (`data_access_scope`, `permissions`, `trust`) are **optional**, a manifest versioned `1.0.0` with only basic `security.risk` remains valid. Manifests using Phase 2 security features should bump to `1.1.0` (MINOR). No `2.0.0` is required unless a future version makes any security field required.
-
-**Parsing rule:** Parsers must treat unknown keys inside `spec.security` as unrecognized but not invalid. A manifest with Phase 2 security fields executed on a Phase 1 runtime should still work — the runtime simply ignores the advanced security declarations and applies its default policy.
-
-### 4.2 Permission Descriptors
-
-Permissions are a formal description of what a capability needs from the outside world.
-
-```yaml
-permissions:
-  - id: filesystem_write
-    type: filesystem                  # filesystem | network | process | secrets | email | ...
-    scope: "output/*"
-    description: "Write report files to output directory"
-    risk: medium                      # Override the default risk for this permission
-    optional: true                    # If denied, capability can degrade gracefully
-    constraints:
-      max_file_size: "10MB"
-      allowed_extensions: [".md", ".pdf", ".html"]
-```
-
-**Permission types:**
-
-| Type | Description | Default Risk |
-|---|---|---|
-| `filesystem_read` | Read files from the local filesystem | medium |
-| `filesystem_write` | Write files to the local filesystem | high |
-| `network_outbound` | Make outbound network requests | medium |
-| `network_inbound` | Listen for inbound connections | high |
-| `process_exec` | Execute subprocesses | critical |
-| `secret_read` | Read secrets or credentials | critical |
-| `email_send` | Send email | high |
-| `api_modify` | Modify external API resources | high |
-| `user_data_read` | Read user's personal data | medium |
-| `user_data_write` | Write user's personal data | high |
-| `payment_exec` | Execute financial transactions | critical |
-
-### 4.3 Risk Level Semantics
-
-| Level | Examples | Default Policy |
-|---|---|---|
-| **low** | Text summarization, translation, formatting | Auto-allow |
-| **medium** | Web search, file read, data analysis | Auto-allow, logged |
-| **high** | File write, email send, API modification | Require user confirmation on first use |
-| **critical** | Payment execution, system administration, process execution | Require explicit approval per invocation |
+For each matching policy, `policy.effective_risk(capability_name, baseline)` checks if the capability name matches any key in `policy.risk_overrides` (glob-based). If it does, the override value replaces the baseline. Otherwise the capability's declared risk is used as-is.
 
 ---
 
 ## 5. Policy Model
 
-### 5.1 Policy Structure
+### 5.1 Policy Data Structure
+
+Policies are **flat** dataclass instances stored as rows in a single SQLite table. There is no `kind` discriminator, no `applies_to` sub-structure, no `metadata` block.
+
+```python
+@dataclass
+class Policy:
+    policy_id: str                    # Unique identifier (e.g. "pol-001")
+    target_patterns: list[str]        # Glob patterns: ["file.*", "network.connect"]
+    risk_overrides: dict[str, str]    # Pattern → risk level: {"file.delete": "critical"}
+    permissions: list[str]            # Permissions granted: ["file:read", "network:outbound"]
+    review_rules: dict[str, Any]      # Free-form dict with known keys:
+                                      #   require_review_for: ["high", "critical"]
+                                      #   deny: list[str] or dict with "capabilities" + "context"
+                                      #   allow: list[str] or dict with "capabilities" + "context"
+    version: int                      # Monotonically increasing, bumped on every upsert
+    description: str                  # Human-readable
+    enabled: bool                     # Disabled policies are skipped during evaluation
+    created_at: str                   # ISO-8601
+    updated_at: str                   # ISO-8601
+```
+
+### 5.2 What Policies Do NOT Have
+
+These fields exist in the aspirational design but are **not present** in the current implementation:
+
+- No `kind: SecurityPolicy` discriminator
+- No structured `applies_to` (workflows, tags, publishers)
+- No `review.timeout` or `review.escalation`
+- No `audit` configuration block
+- No structured permission descriptors (just a flat list of strings)
+- No `min_approval_level`
+- No `trust` section
+
+### 5.3 Policy Matching
+
+`policy.matches(capability_name)` uses `fnmatch.fnmatch` against each pattern in `target_patterns`. First match short-circuits. There is **no specificity sorting** — policies are returned in insertion order, and the decision tree processes them sequentially.
+
+### 5.4 Policy Storage (SQLite Schema)
+
+```sql
+CREATE TABLE IF NOT EXISTS policies (
+    policy_id       TEXT PRIMARY KEY,
+    target_patterns TEXT NOT NULL DEFAULT '[]',   -- JSON array
+    risk_overrides  TEXT NOT NULL DEFAULT '{}',   -- JSON object
+    permissions     TEXT NOT NULL DEFAULT '[]',   -- JSON array
+    review_rules    TEXT NOT NULL DEFAULT '{}',   -- JSON object
+    version         INTEGER NOT NULL DEFAULT 1,
+    description     TEXT NOT NULL DEFAULT '',
+    enabled         INTEGER NOT NULL DEFAULT 1,
+    created_at      TEXT NOT NULL,
+    updated_at      TEXT NOT NULL
+)
+```
+
+All structured fields are stored as JSON-encoded TEXT to avoid SQLite JSON1 extension dependency.
+
+### 5.5 Example Policy (YAML)
+
+This is the format accepted by `security policy apply`:
 
 ```yaml
-kind: SecurityPolicy
-metadata:
-  name: enterprise_default
-  version: 1.0.0
-  publisher: org.example
-  description: "Default security policy for Example Corp"
-
-spec:
-  # Which capabilities/scopes this policy applies to
-  applies_to:
+policy_id: "pol-default"
+target_patterns:
+  - "tool.*"
+  - "file.*"
+risk_overrides:
+  "file.delete": "critical"
+permissions:
+  - "file:read"
+  - "network:outbound"
+review_rules:
+  require_review_for:
+    - "high"
+    - "critical"
+  deny:
     capabilities:
-      - "*"                           # All capabilities
-      - "financial_*"                 # Or specific patterns
-    workflows:
-      - "production_*"
-    tags:
-      - "imported"
-    publishers:
-      - "org.intent-os"               # Trusted publishers
-  
-  # Risk-level overrides
-  risk_overrides:
-    - target: "financial_*"
-      max_allowed: "high"             # Block any financial capability with risk > high
-      default_action: "require_review"
-  
-  # Permission grants and denials
-  permissions:
-    allow:
-      - "filesystem_read"
-      - "network_outbound"
-    deny:
-      - "process_exec"
-      - "email_send"
-      - id: "payment_exec"
-        unless_context:               # Conditional: allow only in specific workflows
-          workflow_tags: ["approved_payment"]
-  
-  # Human review configuration
-  review:
-    require_for:
-      risk: ["critical"]
-      permissions: ["email_send", "payment_exec"]
-      tags: ["untrusted"]
-    timeout: 3600s                    # Review request expires after 1 hour
-    escalation:
-      first: "user"
-      after: 300s                     # If user doesn't respond in 5 min
-      escalate_to: "admin"
-  
-  # Audit configuration
-  audit:
-    level: "all"                      # none | decisions_only | all
-    include_payload: false            # Include execution payload in audit events?
-    retention_days: 90
-```
-
-### 5.2 Policy Storage
-
-Policies are stored in the **Metadata Plane** (Policy Store), not in the Control Plane. The Policy Store is a versioned, append-only store supporting:
-
-- CRUD operations for policy management
-- Policy versioning (every change creates a new version)
-- Conflict detection (overlapping policy scopes)
-- Dry-run evaluation ("what would the decision be for capability X?")
-
-### 5.3 Policy Evaluation Order
-
-```
-For a given capability execution request:
-
-1. Load all policies where applies_to matches the capability/workflow/tag/publisher
-2. Sort by specificity (most specific match wins)
-   - Explicit capability name > glob pattern > wildcard
-   - Explicit workflow name > workflow glob > wildcard
-   - Publisher-specific > general
-3. For each policy dimension (risk, permissions, review), find the most specific applicable rule
-4. Apply the most restrictive interpretation across matched policies
-5. Record the evaluation result as a PolicyEvaluated Event
-6. Return: ALLOW | DENY | REQUIRE_REVIEW
+      - "tool.bash"
+      - "tool.exec"
+  allow:
+    - "tool.read_file"
+    - "tool.list_directory"
+version: 1
+description: "Default enterprise policy"
+enabled: true
 ```
 
 ---
 
-## 6. Human-in-the-Loop Review
+## 6. SecuritySpec (Capability Manifest Integration)
 
-### 6.1 Review Flow
+### 6.1 Two SecuritySpec Definitions
 
-Some capabilities or workflows require human approval. The review flow crosses multiple planes:
+The codebase contains **two** SecuritySpec definitions:
 
-```
-1. Security Manager determines: REQUIRE_REVIEW
-2. → Emits ReviewRequired Event (Event Bus → Data Plane)
-3. → User Plane presents review request to user/approver
-4.   User reviews: capability, input, risk level, requested permissions
-5.   User responds: approve | deny | approve_with_restrictions
-6. → Emits ReviewCompleted Event (User Plane → Event Bus)
-7. → Security Manager reads ReviewCompleted from Event Bus
-8. → Returns final decision
-```
+**A. `core.models.SecuritySpec` — used in CapabilityManifest parsing:**
 
-### 6.2 Review Event Types (SPEC-0003 Addition)
-
-```yaml
-# SPEC-0003 addition: Review events
-
-ReviewRequired:
-  payload:
-    task_id: string
-    capability: string               # name@version
-    risk_level: string
-    requested_permissions: Permission[]
-    input_preview: string             # Truncated input for reviewer context
-    reason: string                    # Why review was triggered
-    review_token: string              # Token for correlating review request → response
-    expires_at: ISO8601               # Review request expiration
-
-ReviewCompleted:
-  payload:
-    task_id: string
-    review_token: string              # Correlates to ReviewRequired
-    approved: boolean
-    reviewer: string                  # Reviewer identifier
-    restrictions: Permission[] | null # Approved-with-restrictions
-    feedback: string | null           # Optional reviewer notes
+```python
+@dataclass
+class SecuritySpec:
+    risk: SecurityRisk = SecurityRisk.LOW       # low | medium | high | critical
+    network: bool = False                        # Does capability make network calls?
+    data_access: bool = False                    # Does it access user/organization data?
+    require_approval: bool = False               # Does it require human approval?
 ```
 
-### 6.3 Auto-Deny on Timeout
+This is the field attached to parsed `CapabilityManifest` objects. It is **not** directly consumed by `SecurityManager.evaluate()`.
 
-If a review request expires without response, the Security Manager must default to **DENY**. This is a safety requirement — no execution proceeds on a timed-out review. The timeout duration is configurable in the policy.
+**B. `core.security.SecuritySpec` — used by SecurityManager:**
 
----
+```python
+@dataclass
+class SecuritySpec:
+    name: str                                    # Canonical capability name
+    risk: SecurityRisk = SecurityRisk.MEDIUM
+    permissions_required: list[str] = []         # e.g. ["file:write"]
+    review_required: bool = False                # Always require review
+    allowed_contexts: list[str] = []             # Glob patterns for context keys
+```
 
-## 7. Audit Trail
+`SecurityManager.evaluate()` accepts this spec, or a dict with equivalent keys, or bare `capability_name` + `risk_level` kwargs.
 
-### 7.1 Security Event Types
+### 6.2 Risk Levels
 
-The following Events are added to SPEC-0003's taxonomy:
+```python
+class SecurityRisk(Enum):
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+    CRITICAL = "critical"
+```
 
-| Event Type | When Emitted | Key Payload |
+Supports ordered comparison: `CRITICAL >= HIGH >= MEDIUM >= LOW`.
+
+| Level | Examples | Default Policy Behavior (with no matching policy) |
 |---|---|---|
-| `PolicyEvaluated` | Every time a policy is checked | policy_id, capability, decision, rationale |
-| `PermissionGranted` | A specific permission is approved | permission_id, scope, granter |
-| `PermissionDenied` | A specific permission is denied | permission_id, reason, policy_ref |
-| `ReviewRequired` | Execution is blocked pending review | task_id, capability, risk_level, review_token |
-| `ReviewCompleted` | Human review responded | review_token, approved, restrictions |
-| `ReviewExpired` | Review timed out without response | review_token |
-| `PolicyViolation` | Runtime detected behavior outside declared scope | capability, violation_type, evidence |
+| `low` | Text formatting, read_file, list_directory | DENY (no policy = deny) |
+| `medium` | API calls, HTTP requests | DENY (no policy = deny) |
+| `high` | File write, shell execution, DB queries | DENY (no policy = deny) |
+| `critical` | File deletion, process execution, deployment | DENY (no policy = deny) |
 
-### 7.2 Audit Record Correlation
-
-All security events for a single execution share a `trace_id`, enabling:
-
-```
-Trace ID: t-20260722-abc123
-
-Events:
-  WorkflowStarted        → trace_id: t-20260722-abc123
-  PolicyEvaluated        → trace_id: t-20260722-abc123  ← security decision
-  TaskStarted            → trace_id: t-20260722-abc123
-  PermissionGranted      → trace_id: t-20260722-abc123  ← permission decision
-  CapabilityInvoked      → trace_id: t-20260722-abc123
-  TaskCompleted          → trace_id: t-20260722-abc123
-
-→ Complete audit trail for this execution
-→ Reproducible: replay events and verify policy decisions match
-```
+**Note:** There are no auto-allow defaults by risk level. Without a matching policy, **every** risk level results in DENY. The policy determines what is allowed.
 
 ---
 
-## 8. Threat Model
+## 7. PolicyStore
 
-### 8.1 Actors
+### 7.1 Overview
 
-| Actor | Description | Trust Level |
+`PolicyStore` is a SQLite-backed CRUD store living in the Metadata Plane. It is **not** event-driven — callers interact with it synchronously.
+
+### 7.2 API
+
+| Method | Description |
+|---|---|
+| `PolicyStore(db_path)` | Initialize, auto-create `policies` table |
+| `upsert(policy) -> Policy` | Insert or update. Bumps version, refreshes timestamps |
+| `get(policy_id) -> Policy \| None` | Retrieve by ID |
+| `get_for_capability(name, context) -> list[Policy]` | Return all enabled policies whose `target_patterns` match `name` |
+| `delete(policy_id) -> bool` | Remove by ID, returns success |
+| `list_all() -> list[Policy]` | All policies, enabled or not |
+| `count() -> int` | Total policy count |
+| `close()` | Close DB connection |
+
+`get_for_capability` iterates all enabled rows, calls `policy.matches(name)` on each, and returns matching policies in insertion order. The `context` parameter is accepted but **not used** at the query level (it is reserved for future context-aware filtering).
+
+### 7.3 Versioning
+
+- `upsert` increments `version` by 1 if the policy already exists
+- New policies start at `version: 1`
+- Old versions are overwritten (not retained as history)
+- `created_at` is preserved across updates; `updated_at` is always refreshed
+
+---
+
+## 8. SecurityManager
+
+### 8.1 Overview
+
+```python
+class SecurityManager:
+    def __init__(self, policy_store: PolicyStore, event_store: EventStore | None = None)
+    def evaluate(self, capability, context) -> EvaluationResult
+```
+
+- **Stateless** — holds references to `PolicyStore` and optional `EventStore`, but no mutable evaluation state
+- **Synchronous** — no async/await, no callbacks, no pub/sub
+- **Event emission is optional** — if `event_store` is `None`, decisions are returned without persistence
+
+### 8.2 evaluate() Signature
+
+```python
+def evaluate(
+    self,
+    capability: SecuritySpec | dict[str, Any] | None = None,
+    context: dict[str, Any] | None = None,
+    *,
+    capability_name: str | None = None,
+    risk_level: str | None = None,
+) -> EvaluationResult
+```
+
+Accepts a `SecuritySpec` object, a dict with `name`/`risk`/`permissions_required`/`review_required`/`allowed_contexts`, or bare string kwargs. The dict form is the most common for ad-hoc evaluation (e.g., from the proxy guard).
+
+### 8.3 EvaluationResult
+
+```python
+@dataclass
+class EvaluationResult:
+    decision: SecurityDecision      # ALLOW | REQUIRE_REVIEW | DENY
+    rationale: str                  # Human-readable explanation
+    policy_id: str | None           # ID of the deciding policy, or None
+    risk_level: str                 # Effective risk level (may be overridden)
+    capability_name: str            # Name of the evaluated capability
+```
+
+### 8.4 SecurityDecision Enum
+
+```python
+class SecurityDecision(Enum):
+    ALLOW = "allow"
+    REQUIRE_REVIEW = "require_review"
+    DENY = "deny"
+```
+
+`REQUIRE_REVIEW` is an informational signal. There is **no review workflow** — no `ReviewRequired`/`ReviewCompleted` event emission, no review token, no timeout, no escalation. The caller is responsible for interpreting `REQUIRE_REVIEW` however it chooses.
+
+### 8.5 Context Matching
+
+`_matches_rules()` supports two rule formats:
+
+1. **List of glob patterns** — matched against capability name:
+   ```python
+   "deny": ["tool.bash", "tool.exec.*"]
+   ```
+
+2. **Dict with `capabilities` and optional `context` constraints**:
+   ```python
+   "deny": {
+       "capabilities": ["tool.bash"],
+       "context": {"user_role": ["guest", "intern"]}
+   }
+   ```
+   Context matching uses simple key-value equality (or list membership).
+
+`_context_allowed()` matches context **keys** (not values) against glob patterns from `spec.allowed_contexts`.
+
+---
+
+## 9. Proxy Tool Call Guard
+
+### 9.1 Overview
+
+`ToolCallGuard` is an **optional** proxy layer (enabled via `--guard` flag) that inspects LLM responses for tool/function calls and evaluates them against security policies.
+
+### 9.2 Tool Risk Classification
+
+`classify_tool_risk(tool_name)` maps tool names to risk levels using a hardcoded dictionary of **30+ patterns** across six categories:
+
+| Category | Example Patterns | Default Risk |
 |---|---|---|
-| **Capability Publisher** | Writes and publishes Capability Manifests | Low — Manifests may misdeclare risk |
-| **Runtime Operator** | Operates the Intent OS runtime (adapter config) | High — controls which adapters run |
-| **End User** | Submits goals and approves execution | Medium — may be tricked into approving malicious workflows |
-| **Policy Author** | Writes organizational security policies | High — should be trusted role |
-| **Model Provider** | Provides the underlying LLM (OpenAI, Anthropic, etc.) | Depends on provider |
+| **filesystem** | `write_file`, `delete_file`, `edit_file`, `chmod`, `rename_file` | high/critical |
+| **shell** | `bash`, `execute_command`, `run_shell`, `exec`, `subprocess` | high/critical |
+| **data** | `database_query`, `sql`, `delete_database`, `drop_table`, `read_database` | high/critical |
+| **network** | `api_call`, `http_request`, `fetch_url` | medium |
+| **deployment** | `deploy`, `kubernetes`, `docker`, `terraform` | critical |
+| **auth** | `add_ssh_key`, `create_user`, `delete_user`, `sudo` | high/critical |
+| **low-risk** | `read_file`, `list_directory` | low |
 
-### 8.2 Threats and Mitigations
+Matching strategy: exact name match first, then substring fallback (if the pattern is found within the tool name or vice versa). Unknown tools default to `{"risk": "medium", "category": "unknown"}`.
 
-| # | Threat | Likelihood | Impact | Mitigation |
-|---|---|---|---|---|
-| T1 | **Capability misdeclares risk** (declares `low` but performs `critical` actions) | Medium | High | Trust verification (signed manifests), runtime behavior monitoring (PolicyViolation events), capability review |
-| T2 | **Malicious capability exfiltrates data** via network call | Medium | Very High | Declared `data_access` + `network` must match; runtime can strip/rewrite network calls |
-| T3 | **Orchestration poisoning** — attacker controls what capabilities compose together | Medium | High | Policy scoping by publisher; signed workflows; trusted publisher allowlists |
-| T4 | **Privilege escalation via workflow** — low-risk capability combined with high-risk one | Medium | Medium | Workflow-level risk aggregation: total workflow risk ≥ max(task risk) |
-| T5 | **Policy bypass via adapter** — adapter fails to enforce a constraint | Low | Very High | Adapter compatibility certification; intent-os compare validates security behavior |
-| T6 | **Review fatigue** — user auto-approves without reading | High | Medium | Progressive delay (auto-deny doubles timeout each skip); require different approvers for critical |
-| T7 | **Manifest injection** — attacker modifies manifest between validation and execution | Low | High | Digest verification (SPEC-0001); runtime verifies digest before execution |
-| T8 | **Audit flood** — attacker generates many events to hide malicious one | Medium | Low | Event Store is immutable append-only; anomaly detection in Phase 3+ |
-| T9 | **MCP injection** — malicious or compromised MCP server registers harmful capabilities | Medium | High | Import-time security defaults (network: true, risk: medium); admin must review and override; MCP Server origin is recorded as publisher |
-| T10 | **MCP blind spot** — security-relevant actions happen inside the MCP server outside Intent OS's audit scope | Medium | Medium | Intent OS cannot audit what it cannot see; policy should require MCP capabilities to declare all side effects explicitly; Phase 3+ may support MCP server attestation |
-| T11 | **Stale MCP import** — MCP server capability evolves after import, changing its actual behavior without updating the Intent OS Manifest | Medium | High | Periodic re-import recommended; digest verification catches content changes; policy can set max_manifest_age to force re-validation |
+### 9.3 Sensitive Data Scanning
 
-### 8.3 Risk Aggregation
+`check_sensitive_data(text)` scans text against regex patterns for:
+- API keys (OpenAI, Anthropic, AWS, GitHub)
+- Bearer tokens, JWT tokens
+- Password assignment in environment variables
+- Private key blocks (PEM format)
 
-For composed workflows (SPEC-0002), the overall risk is the maximum of all task risks:
+Returns `[{type, match_preview}]` for any matches.
+
+### 9.4 Response Parsing
+
+- `parse_openai_tool_calls(response_body)` — extracts `tool_calls` from OpenAI chat completion responses
+- `parse_anthropic_tool_calls(response_body)` — extracts `tool_use` blocks from Anthropic content arrays
+
+### 9.5 Inspection Flow
 
 ```
-workflow risk = max(task_1.risk, task_2.risk, ..., task_n.risk)
+LLM Response
+  → parse tool/function calls
+  → for each call:
+       classify_tool_risk(name)
+       manager.evaluate(capability_name=f"tool.{name}", risk_level=classified_risk)
+       check_sensitive_data(arguments)
+  → return [{tool, risk, category, decision, rationale, sensitive_data_found}]
 ```
 
-This is a conservative model. Future versions may support context-aware aggregation:
-- If tasks execute sequentially on unrelated data, the aggregate risk may be lower than the max
-- If tasks share data flow (output of high-risk task feeds another), the aggregate risk compounds
+### 9.6 What the Guard Does NOT Do
+
+- Does NOT modify the forwarding path — it only adds inspection
+- Does NOT block execution — it reports decisions but the caller decides what to do
+- Does NOT use typed permission descriptors — tool risk is determined by pure name matching
 
 ---
 
-## 9. Manifest Signing (Phase 2+)
+## 10. Security Events
 
-### 9.1 Trust Chain
+### 10.1 Implemented: PolicyEvaluated
 
-```
-Capability Publisher
-  ↓ signs manifest with private key
-Signed Manifest (YAML + detached signature)
-  ↓ runtime verifies against trusted publisher registry
-Verified Manifest
-  ↓ policy evaluation
-Execution Decision
+Only **one** security event type is emitted in the current codebase:
+
+```python
+EventType.POLICY_EVALUATED = "PolicyEvaluated"
 ```
 
-### 9.2 Signature Format
+Emitted by `SecurityManager._emit_event()` after every evaluation (if `event_store` is provided). Payload:
 
-```yaml
-metadata:
-  name: financial_analyze
-  version: 1.0.0
-  publisher: org.example
-  digest: sha256:e3b0c44298fc...
-  signature:                      # Optional — present only when signed
-    algorithm: ed25519
-    key_id: "pub-2026-01"
-    value: "MC0CFQ..."           # Base64-encoded signature
-    signed_fields:               # Which fields were included in the signature
-      - "metadata.name"
-      - "metadata.version"
-      - "metadata.publisher"
-      - "spec.input"
-      - "spec.output"
-      - "spec.security"
-      - "spec.permissions"
-    timestamp: "2026-07-22T10:00:00Z"
+```json
+{
+    "policy_id": "pol-001",
+    "capability": "file.write",
+    "decision": "allow",
+    "rationale": "Capability 'file.write' is permitted by policy 'pol-001'.",
+    "risk_level": "high"
+}
 ```
 
-### 9.3 Verification
+Each evaluation gets a fresh UUID `trace_id` — the SecurityManager maintains no session state.
 
-- The runtime verifies the signature against the publisher's public key (stored in Metadata Plane)
-- If `trust.require_signed_manifest` is true and the manifest is unsigned, execution is blocked
-- If the manifest content differs from signed_fields, execution is blocked
-- Verification result is recorded as a `PolicyEvaluated` event
+### 10.2 Defined but NOT Emitted (Phase 2+)
 
-### 9.4 Signature Algorithm Choice
+These event types exist in `EventType` enum but **no code emits them**:
 
-> **Note:** This spec defines the *format* of a signed manifest (where the signature goes, what fields are covered) but does NOT mandate which signing algorithm to use. The choice of algorithm (Ed25519, ECDSA, RSA-PSS, etc.) is **implementation-defined** and outside the scope of this spec. Implementations may select algorithms based on their deployment environment's key management infrastructure. This preserves the constitutional principle: **Intent OS does not standardize intelligence — it standardizes interaction.** The format of interaction (where the signature field lives) is standardized; the cryptographic *method* is left to the implementer.
+| Event Type | Status |
+|---|---|
+| `PERMISSION_GRANTED` | Defined, not emitted |
+| `PERMISSION_DENIED` | Defined, not emitted |
+| `REVIEW_REQUIRED` | Defined (in enum as `ReviewRequired`), not emitted |
+| `REVIEW_COMPLETED` | Defined (in enum as `ReviewCompleted`), not emitted |
+| `REVIEW_EXPIRED` | Defined, not emitted |
+| `POLICY_VIOLATION` | Defined, not emitted |
+
+They are placeholders reserved for Phase 2+ review workflows, fine-grained permission tracking, and behavioral anomaly detection.
 
 ---
 
-## 10. Policy API (Phase 2+)
+## 11. CLI Commands
 
-### 10.1 CLI Interface
+### 11.1 Security Commands
 
 ```bash
-# List active policies
-intent-os policy list
+# List all policies
+intent-os security policy list
 
-# Apply a policy from file
-intent-os policy apply enterprise_policy.yaml
+# Get a single policy
+intent-os security policy get <name>
 
-# Evaluate a capability against current policies (dry run)
-intent-os policy evaluate examples/text_summarize.yaml
+# Apply a policy from a YAML file
+intent-os security policy apply <file.yaml>
 
-# View policy evaluation history
-intent-os policy history
+# Dry-run: evaluate a capability manifest against stored policies
+intent-os security evaluate <manifest.yaml>
 
-# Export audit trail for compliance
-intent-os policy audit --since 2026-07-01 --format json
+# Export compliance report (policy coverage summary in JSON)
+intent-os security audit
 ```
 
-### 10.2 Audit Export Format
+### 11.2 Scan Command
 
+```bash
+# Scan all recent traces for security issues
+intent-os scan
+
+# Scan a specific trace
+intent-os scan --trace <trace-id>
+
+# Generate a security report file (CSV)
+intent-os scan --report
+
+# Generate an HTML security report
+intent-os scan --report --html
+
+# Specify output path
+intent-os scan --report --output report.csv
+```
+
+The scan command is **post-execution and read-only** — it reads from the Event Store, identifies dangerous tool call patterns, sensitive data exposure, permission errors, and agent call failures. It does not modify state or intercept execution.
+
+Scan analysis includes:
+- Sensitive data pattern scanning (API keys, tokens, passwords)
+- Agent call failure detection
+- Permission denial pattern detection in execution errors
+
+### 11.3 Audit Command
+
+```bash
+# Summary of all execution records
+intent-os audit
+
+# Full audit report (CSV)
+intent-os audit report
+
+# Full audit report (HTML)
+intent-os audit report --html
+
+# Full audit report (JSON)
+intent-os audit report --json
+
+# Limit to N days
+intent-os audit report --days 30
+```
+
+The audit command generates compliance-ready reports covering: trace IDs, capability names/versions, status (success/failure), runtimes, adapters, costs, token usage, agents, models, and security events detected.
+
+---
+
+## 12. Phase 2+ Roadmap
+
+Everything in this section is **not implemented**. It documents the design direction for future phases.
+
+### 12.1 Event-Driven Policy Resolution
+
+Replace direct SQLite queries with pub/sub:
+```
+SecurityManager emits PolicyQueryRequest → Event Bus
+Metadata Plane subscribers respond with PolicyQueryResponse
+```
+
+This would enable distributed deployment (any SecurityManager instance can evaluate any request without a local PolicyStore) and deterministic replays (replay events, get same decisions).
+
+### 12.2 Layered Overrides
+
+Implement the `org → user → runtime` restriction chain. Each layer can only restrict, never expand. Organizational policy stored in Metadata Plane, user preferences via User Plane, runtime defaults as final safety net.
+
+### 12.3 Human-in-the-Loop Review
+
+Implement actual review workflow using `REVIEW_REQUIRED`, `REVIEW_COMPLETED`, and `REVIEW_EXPIRED` events:
+- Review request with token, expiration
+- User Plane presents approval dialog
+- Auto-DENY on timeout
+- Configurable escalation path
+
+### 12.4 Manifest Signing
+
+Ed25519 signature support in Capability Manifests:
+- Sign manifest fields with publisher private key
+- Verify against trusted publisher registry
+- Block unsigned manifests when policy requires signatures
+
+### 12.5 Structured Permission Descriptors
+
+Replace flat `permissions: list[str]` with typed descriptors:
 ```yaml
-compliance_report:
-  period:
-    start: "2026-07-01T00:00:00Z"
-    end: "2026-07-22T23:59:59Z"
-  
-  summary:
-    total_executions: 1247
-    total_policy_evaluations: 1247
-    approvals_granted: 1240
-    approvals_denied: 5
-    reviews_required: 2
-    reviews_approved: 2
-    reviews_denied: 0
-    reviews_expired: 0
-    policy_violations: 0
-  
-  policy_coverage:
-    - policy: "enterprise_default"
-      evaluations: 1247
-      allows: 1240
-      denies: 5
-      requires_review: 2
-  
-  high_risk_executions:
-    - trace_id: "t-abc123"
-      capability: "payment_exec@1.0.0"
-      decision: "allow"
-      rationale: "workflow context matches approved_payment"
-      reviewer: "user@example.com"
-      timestamp: "2026-07-15T14:30:00Z"
-  
-  compliance_status: "PASS"   # PASS | FAIL | NEEDS_REVIEW
+permissions:
+  - id: filesystem_write
+    type: filesystem
+    scope: "output/*"
+    risk: medium
+    optional: true
+    constraints:
+      max_file_size: "10MB"
 ```
+
+### 12.6 Data Access Scope
+
+Add `data_access_scope` to manifest `spec.security`:
+```yaml
+data_access_scope:
+  reads:
+    - files: ["*.md", "*.txt"]
+    - env: ["USER", "HOME"]
+  writes:
+    - files: ["output/*"]
+```
+
+### 12.7 Advanced Policy Features
+
+- `applies_to` with workflow, tag, and publisher matching
+- Review timeout and escalation configuration
+- Audit mode (log-only, no enforcement)
+- Policy specificity sorting (most specific match wins)
+- Conflict detection for overlapping policy scopes
+- Dry-run policy evaluation against historical events
+
+### 12.8 Trust Anchors
+
+Publisher verification via trusted registry:
+- `trust.require_signed_manifest`
+- `trust.allowed_publishers`
+- Periodic re-validation (`max_manifest_age`)
+
+### 12.9 Behavioral Anomaly Detection
+
+Runtime behavior monitoring:
+- `POLICY_VIOLATION` events when capability exceeds declared scope
+- Anomaly detection in Phase 3+ (event pattern analysis)
+- Automated policy suggestion from Event Store analytics
+
+### 12.10 Audit Mode
+
+`audit.level` configuration:
+- `none` — no audit events
+- `decisions_only` — log decisions without payload
+- `all` — full audit with payload
+- `include_payload` and `retention_days` settings
 
 ---
 
-## 11. MCP Security Integration
+## 13. Validation Rules (Current Implementation)
 
-### 11.1 Complementary Security Domains
-
-```
-MCP Security Domain:
-  - Tool authentication (which client can call which tool)
-  - Transport security (SSE or Streamable HTTP)
-  - Tool-level authorization
-
-Intent OS Security Domain:
-  - Capability permission model (what a capability needs)
-  - Workflow-level policy (composition safety)
-  - Cross-runtime audit trail
-  - Human review workflow
-```
-
-### 11.2 Integration Points
-
-When Intent OS consumes an MCP server as a Capability Provider (via `import mcp-server`), the conversion process maps:
-
-```
-MCP tool definition
-  → name and description become capability metadata
-  → inputSchema becomes capability input schema
-  → (The MCP tool has no security declaration — this is added during import)
-
-Import-time security:
-  → Imported MCP tools default to risk: medium
-  → Publisher is set to the MCP server origin
-  → network: true is set (all MCP calls are network calls)
-  → The importing admin can override these defaults
-```
+1. **No-policy = deny**: A capability with no matching policy receives DENY.
+2. **Explicit deny is final**: An explicit deny rule in any matching policy overrides all other rules.
+3. **Explicit allow overrides review**: An explicit allow rule prevents review threshold from upgrading to REQUIRE_REVIEW.
+4. **Context restrictions fail closed**: If `spec.allowed_contexts` is non-empty and context keys don't match, the result is DENY.
+5. **Disabled policies are skipped**: Only `enabled=1` policies participate in evaluation.
+6. **Risk override is glob-based**: `policy.risk_overrides` matches keys against capability name via `fnmatch`.
 
 ---
 
-## 12. Phase Transition Plan
+## 14. Files
 
-### Phase 2 — Foundation (Current)
-
-- ✅ `SecuritySpec` data model in Capability Manifest (SPEC-0001)
-- ✅ `SecurityRisk` enum (low/medium/high/critical)
-- ✅ Risk inheritance defaults (if omitted: `risk: low`)
-- ⬜ Security Model design document (this file — complete)
-- ⬜ `PolicyEvaluated` Event type in SPEC-0003
-- ⬜ `ReviewRequired` / `ReviewCompleted` Event types in SPEC-0003
-
-### Phase 2 — Implementation
-
-- Security Manager component in Control Plane (stateless, policy evaluation only)
-- Policy Store in Metadata Plane (versioned policies)
-- Human review flow (User Plane integration)
-- `intent-os policy` CLI subcommands
-
-### Phase 3 — Advanced
-
-- Manifest signing and signature verification
-- Behavioral anomaly detection (PolicyViolation events)
-- Automated policy suggestion (via Event Store analytics)
-- Cross-registry trust federation
-
-### Phase 4 — Ubiquitous
-
-- Real-time policy adaptation (Evolution Loop integrates security feedback)
-- Federated trust across independent Intent OS instances
-- Compliance automation (auto-generated SOC2/ISO27001 evidence)
+| File | Role |
+|---|---|
+| `reference-runtime/core/security.py` | SecurityManager, PolicyStore, Policy, SecuritySpec, SecurityDecision, EvaluationResult |
+| `reference-runtime/core/models.py` | EventType enum (all security events), CapabilityManifest SecuritySpec |
+| `reference-runtime/proxy/guard.py` | ToolCallGuard, classify_tool_risk, check_sensitive_data, response parsers |
+| `reference-runtime/commands/security.py` | CLI: policy list/get/apply, evaluate, audit |
+| `reference-runtime/commands/scan.py` | CLI: post-execution security scanning |
+| `reference-runtime/commands/audit.py` | CLI: compliance audit reports |
+| `reference-runtime/cli.py` | CLI command registration and parser setup |
 
 ---
 
-## 13. Validation Rules
+## 15. References
 
-1. **Risk consistency**: A capability's `security.risk` must be consistent with its declared `security.permissions`. E.g., a capability with `payment_exec` permission cannot declare `risk: low`.
-2. **Scope coverage**: All `data_access_scope` paths and API endpoints must be covered by at least one declared permission.
-3. **Publisher verification**: If `trust.allowed_publishers` is non-empty, the capability's `metadata.publisher` must appear in the list.
-4. **Workflow risk aggregation**: A workflow's effective risk level is `max(task_1.risk, ..., task_n.risk)`. This value is used for policy evaluation, not individual task risks.
-5. **Review timeout**: A `ReviewRequired` event without a corresponding `ReviewCompleted` before expiration auto-denies.
-6. **Signature verification**: If a policy requires signed manifests, any unsigned capability's execution attempt produces a `PolicyEvaluated` event with `decision: deny`.
-
----
-
-## 14. References
-
-- SPEC-0001: Capability Manifest — `spec.security` section
-- SPEC-0002: Workflow Graph — workflow-level risk aggregation
-- SPEC-0003: Event Schema — `PolicyEvaluated`, `ReviewRequired`, `ReviewCompleted` events
-- POSIX permissions model — for least-privilege inspiration
-- Kubernetes RBAC — for policy evaluation ordering and aggregation patterns
-- OAuth 2.0 scopes — for permission descriptor design
-- MCP Security Specification — for complementary security domain boundaries
+- SPEC-0001: Capability Manifest — `SecuritySpec` in manifest model
+- SPEC-0003: Event Schema — `POLICY_EVALUATED`, reserved security events
+- `fnmatch` — Python standard library glob matching used for policy targeting

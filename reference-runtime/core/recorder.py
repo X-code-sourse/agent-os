@@ -137,7 +137,14 @@ class ExecutionRecorder:
         attempt: int = 1,
         output_ref: str | None = None,
     ) -> Event:
-        """Record TaskCompleted event."""
+        """Record TaskCompleted event.
+
+        Follows SPEC-0003 Section 5.3: *token_count* and *cost_usd*
+        live in ``payload`` (not metrics) so that consumer code has a
+        single place to look for execution results.
+        """
+        input_tokens = token_count.get("input", 0)
+        output_tokens = token_count.get("output", 0)
         return self.record(
             event_type=EventType.TASK_COMPLETED,
             task_id=task_id,
@@ -147,15 +154,16 @@ class ExecutionRecorder:
                 "output_ref": output_ref or "",
                 "output_schema_valid": True,
                 "latency_ms": latency_ms,
+                "token_count": {
+                    "input": input_tokens,
+                    "output": output_tokens,
+                    "total": input_tokens + output_tokens,
+                },
+                "cost_usd": cost_usd,
                 "attempt": attempt,
             },
             metrics={
                 "latency_ms": latency_ms,
-                "token_count": {
-                    "input": token_count.get("input", 0),
-                    "output": token_count.get("output", 0),
-                    "total": token_count.get("input", 0) + token_count.get("output", 0),
-                },
                 "cost_usd": cost_usd,
             },
         )

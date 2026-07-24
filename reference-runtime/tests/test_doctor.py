@@ -113,12 +113,11 @@ class TestDoctorOutput:
             return stdout.getvalue()
 
     def test_no_traces(self) -> None:
-        """No traces should guide user to demo or proxy."""
+        """No traces should guide user to proxy start."""
         store = MagicMock()
         store.get_all_trace_ids.return_value = []
         output = self._run_doctor(store, "")
         assert "No agent executions found" in output
-        assert "intent-os demo" in output
         assert "intent-os proxy" in output
 
     def test_healthy_output(self) -> None:

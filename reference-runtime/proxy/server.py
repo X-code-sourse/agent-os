@@ -10,6 +10,7 @@ Usage:
 """
 from __future__ import annotations
 
+import http.client
 import json
 import os
 import time
@@ -18,6 +19,7 @@ import urllib.error
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from socketserver import ThreadingMixIn
 from typing import Any
+from urllib.parse import urlparse
 
 from proxy.tracer import AgentTracer, detect_agent
 from proxy.guard import ToolCallGuard
@@ -27,6 +29,15 @@ from proxy.guard import ToolCallGuard
 
 OPENAI_API_URL = "https://api.openai.com/v1/chat/completions"
 ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages"
+
+# ── Streaming byte → token estimator (rough: ~3.5 chars per token) ──
+
+_BYTES_PER_TOKEN = 3.5
+
+
+def _estimate_tokens_from_bytes(byte_count: int) -> int:
+    """Rough token estimate from raw byte count (for streaming responses)."""
+    return max(1, int(byte_count / _BYTES_PER_TOKEN))
 
 
 def _get_api_key(provider: str) -> str | None:
@@ -98,6 +109,41 @@ def _get_model_from_request(body: dict[str, Any]) -> str:
     return str(body.get("model", body.get("model_name", "unknown")))
 
 
+def _is_streaming_request(body: dict[str, Any]) -> bool:
+    """Return True when the request body asks for SSE streaming."""
+    return bool(body.get("stream", False))
+
+
+def _forward_stream_setup(
+    url: str,
+    body: bytes,
+    api_key: str,
+    content_type: str,
+    timeout: int = 300,
+) -> tuple[int, dict[str, str], http.client.HTTPSConnection, http.client.HTTPResponse]:
+    """Open a streaming connection to the upstream API.
+
+    Returns ``(status, headers, conn, response)`` — the **caller** is
+    responsible for forwarding the status + headers to the client, then
+    reading chunks from *response* and writing them to the client socket.
+    """
+    parsed = urlparse(url)
+    port = 443 if parsed.port is None else parsed.port
+
+    conn = http.client.HTTPSConnection(parsed.netloc, port, timeout=timeout)
+
+    req_headers: dict[str, str] = {"Content-Type": content_type}
+    if "anthropic" in url:
+        req_headers["x-api-key"] = api_key
+    else:
+        req_headers["Authorization"] = f"Bearer {api_key}"
+
+    conn.request("POST", parsed.path or "/", body=body, headers=req_headers)
+    resp = conn.getresponse()
+    resp_headers: dict[str, str] = dict(resp.getheaders())
+    return resp.status, resp_headers, conn, resp
+
+
 class ProxyHandler(BaseHTTPRequestHandler):
     """HTTP request handler that proxies LLM API calls and records them."""
 
@@ -132,8 +178,19 @@ class ProxyHandler(BaseHTTPRequestHandler):
         start_time = time.monotonic()
         path = self.path.rstrip("/")
 
-        # Read request body
-        content_length = int(self.headers.get("Content-Length", 0))
+        # Read request body — parse Content-Length defensively
+        try:
+            content_length = int(self.headers.get("Content-Length", 0))
+        except ValueError:
+            self._send_error(400, "Invalid Content-Length header")
+            return
+
+        # Reject oversized request bodies (50 MB limit)
+        MAX_BODY_SIZE = 50 * 1024 * 1024  # 50 MB
+        if content_length > MAX_BODY_SIZE:
+            self._send_error(413, "Request body too large (max 50 MB)")
+            return
+
         body = self.rfile.read(content_length) if content_length > 0 else b""
         content_type = self.headers.get("Content-Type", "application/json")
 
@@ -168,7 +225,59 @@ class ProxyHandler(BaseHTTPRequestHandler):
         model = _get_model_from_request(request_body)
         agent = detect_agent(dict(self.headers))
 
-        # Forward the request to the real API
+        # ── Streaming path: forward chunks in real-time ──
+        if _is_streaming_request(request_body):
+            status_code, resp_headers, upstream_conn, upstream_resp = _forward_stream_setup(
+                upstream, body, api_key, content_type
+            )
+
+            # Forward HTTP status + headers to the client
+            self.send_response(status_code)
+            for key, value in resp_headers.items():
+                key_lower = key.lower()
+                if key_lower in ("transfer-encoding", "connection", "content-length"):
+                    continue
+                self.send_header(key, value)
+            self.send_header("X-Intent-OS-Proxy", "true")
+            self.end_headers()
+
+            # Stream body chunks from upstream → client
+            total_bytes = 0
+            while True:
+                chunk = upstream_resp.read(8192)
+                if not chunk:
+                    break
+                total_bytes += len(chunk)
+                try:
+                    self.wfile.write(chunk)
+                    self.wfile.flush()
+                except (BrokenPipeError, ConnectionResetError, OSError):
+                    break
+            upstream_conn.close()
+
+            elapsed_ms = (time.monotonic() - start_time) * 1000
+
+            # Estimate tokens from byte count (streaming gives us no usage object)
+            estimated_tokens = _estimate_tokens_from_bytes(total_bytes)
+            input_tokens = estimated_tokens // 3
+            output_tokens = estimated_tokens - input_tokens
+
+            status = "success" if status_code < 400 else "failure"
+            tracer = self._get_tracer()
+            tracer.trace_call(
+                provider=provider or "unknown",
+                model=model,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                latency_ms=elapsed_ms,
+                status=status,
+                source_agent=agent,
+                endpoint=path,
+                agent_id=self._agent_id,
+            )
+            return
+
+        # ── Non-streaming path: buffer full response ──
         status_code, resp_headers, resp_body = _forward_request(
             upstream, body, api_key, content_type
         )

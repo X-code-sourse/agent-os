@@ -67,7 +67,7 @@ def _analyze_trace(
                 all_messages.append(json.dumps(val))
 
         # Check tool call patterns in event content
-        if evt.get("event_type") == "CapabilityInvoked":
+        if evt.get("event_type") in ("CapabilityInvoked", "LlmCall"):
             cap = evt.get("capability", "")
             source = evt.get("source", "")
 

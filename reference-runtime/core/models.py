@@ -43,6 +43,8 @@ class EventType(Enum):
     COST_ACCUMULATED = "CostAccumulated"
     REVIEW_REQUIRED = "ReviewRequired"
     REVIEW_COMPLETED = "ReviewCompleted"
+    # Proxy / observability events (SPEC-0003 Section 3.3)
+    LLM_CALL = "LlmCall"                     # proxy-captured LLM API telemetry
     # System events
     RUNTIME_REGISTERED = "RuntimeRegistered"
     CAPABILITY_REGISTERED = "CapabilityRegistered"
@@ -81,7 +83,11 @@ class FieldSchema:
     max_length: int | None = None
     minimum: float | None = None
     maximum: float | None = None
+    pattern: str | None = None           # regex pattern for string fields
+    format: str | None = None            # semantic format hint (uri, email, …)
     enum: list[str] | None = None
+    min_items: int | None = None         # min array length
+    max_items: int | None = None         # max array length
     properties: dict[str, FieldSchema] | None = None  # for object type
     items: FieldSchema | None = None  # for array type
 
@@ -168,6 +174,7 @@ class Event:
     timestamp: datetime
     source: str
     sequence: int
+    spec_version: str = "1.0"
     payload: dict[str, Any] | None = None
     metrics: dict[str, Any] | None = None
     workflow_id: str | None = None
@@ -184,6 +191,7 @@ class Event:
         trace_id: str | None = None,
         source: str = "runtime",
         sequence: int = 0,
+        spec_version: str = "1.0",
         payload: dict | None = None,
         metrics: dict | None = None,
         workflow_id: str | None = None,
@@ -198,6 +206,7 @@ class Event:
             timestamp=datetime.now(timezone.utc),
             source=source,
             sequence=sequence,
+            spec_version=spec_version,
             payload=payload or {},
             metrics=metrics,
             workflow_id=workflow_id,
@@ -210,7 +219,7 @@ class Event:
     def to_dict(self) -> dict[str, Any]:
         """Serialize to a JSON-compatible dict (SPEC-0003 compliant)."""
         result = {
-            "spec_version": "1.0",
+            "spec_version": self.spec_version,
             "event_id": self.event_id,
             "event_type": self.event_type.value,
             "trace_id": self.trace_id,
@@ -262,6 +271,8 @@ class ExecutionRecord:
     total_latency_ms: float = 0.0
     total_cost_usd: float = 0.0
     total_tokens: int = 0
+    agent_id: str | None = None       # BluePrint Layer 2 — which Agent ran this
+    context_id: str | None = None      # BluePrint Layer 1 — which Context it ran under
 
     def compute_latency_from_events(self) -> float:
         """Calculate total elapsed time from events.
@@ -298,6 +309,44 @@ class ExecutionRecord:
                 total += evt.metrics["token_count"]
         return total
 
+    @property
+    def replay_ready(self) -> bool:
+        """Whether this execution record has the minimum data for replay.
+
+        A record is replay-ready when all three of the following hold:
+
+        - ``input`` is not ``None``
+        - ``output`` is not ``None``
+        - ``events`` is a non-empty list
+        """
+        return (
+            self.input is not None
+            and self.output is not None
+            and len(self.events) > 0
+        )
+
+    def check_replay_readiness(self) -> dict[str, Any]:
+        """Return a detailed readiness report for this execution record.
+
+        Returns:
+            A dict with two keys:
+
+            - ``ready`` (:class:`bool`) — overall replay-readiness
+            - ``missing_fields`` (:class:`list[str]`) — names of the
+              required fields that are absent or empty
+        """
+        missing: list[str] = []
+        if self.input is None:
+            missing.append("input")
+        if self.output is None:
+            missing.append("output")
+        if not self.events:
+            missing.append("events")
+        return {
+            "ready": len(missing) == 0,
+            "missing_fields": missing,
+        }
+
     def to_dict(self) -> dict[str, Any]:
         """Serialize to a JSON-compatible dict."""
         return {
@@ -322,6 +371,8 @@ class ExecutionRecord:
                 "total_tokens": self.total_tokens,
             },
             "events": [e.to_dict() for e in self.events],
+            "agent_id": self.agent_id,
+            "context_id": self.context_id,
         }
 
 
@@ -343,3 +394,92 @@ class ValidationResult:
     valid: bool
     errors: list[ValidationError] = field(default_factory=list)
     warnings: list[ValidationError] = field(default_factory=list)
+
+
+# ──────────────────────────────────────────────
+# Context Layer — Execution Context (BluePrint Layer 1)
+# ──────────────────────────────────────────────
+
+@dataclass
+class ExecutionContext:
+    """A snapshot of the environment an Agent needs to execute a task.
+
+    Context is NOT memory — it does not record user preferences.
+    It records the task-level constraints that bound an Agent's behaviour:
+    what project it belongs to, what goal it pursues, what limits apply.
+
+    One Context can host many Executions.  Multiple Agents can share a
+    Context (e.g. Research Agent → Trading Agent → Risk Agent).
+    """
+    context_id: str
+    name: str
+    goal: str = ""
+    constraints: list[str] = field(default_factory=list)
+    task_scope: str = ""
+    variables: dict[str, Any] = field(default_factory=dict)
+    parent_context_id: str | None = None
+    created_by: str = ""
+    created_at: str = ""
+    expires_at: str | None = None
+
+
+# ──────────────────────────────────────────────
+# Verification Layer — Evidence (BluePrint Layer 4)
+# ──────────────────────────────────────────────
+
+@dataclass
+class Evidence:
+    """Verifiable evidence backing an Agent's output claim.
+
+    Every claim an Agent makes can (optionally) be accompanied by
+    one or more Evidence records, each pointing to the source data
+    or calculation that supports the claim.
+
+    Linked to an Execution via ``execution_id``.
+    """
+    evidence_id: str
+    execution_id: str
+    claim: str
+    source_type: str = ""        # "data" | "calculation" | "model_inference" | "external_api"
+    source_ref: str = ""
+    raw_data_ref: str = ""
+    confidence: float = 0.0
+    verified: bool = False
+    verified_by: str | None = None
+    verified_at: str | None = None
+    created_at: str = ""
+
+
+# ──────────────────────────────────────────────
+# Identity Layer — Team (BluePrint Layer 2)
+# ──────────────────────────────────────────────
+
+@dataclass
+class Team:
+    """A group of Agents and users that share policies and visibility."""
+    team_id: str
+    name: str
+    description: str = ""
+    owner: str = ""
+    org_id: str = ""
+    member_ids: list[str] = field(default_factory=list)
+    policy_ids: list[str] = field(default_factory=list)
+    created_at: str = ""
+
+
+# ──────────────────────────────────────────────
+# Interoperability Layer — Capability Entry (BluePrint Layer 6)
+# ──────────────────────────────────────────────
+
+@dataclass
+class CapabilityEntry:
+    """A Capability published in the Registry, discoverable by other Agents."""
+    capability_id: str           # "name@version"
+    manifest_yaml: str = ""      # raw YAML
+    publisher: str = ""          # Agent ID or Org ID
+    visibility: str = "private"  # "public" | "team" | "private"
+    verified: bool = False
+    usage_count: int = 0
+    rating: float = 0.0
+    created_at: str = ""
+    updated_at: str = ""

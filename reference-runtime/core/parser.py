@@ -72,10 +72,15 @@ def _parse_field_schema(
     if field_type == "string":
         schema.min_length = raw.get("min_length")
         schema.max_length = raw.get("max_length")
+        schema.pattern = raw.get("pattern")
+        schema.format = raw.get("format")
         schema.enum = raw.get("enum")
     elif field_type in ("integer", "number"):
         schema.minimum = raw.get("minimum")
         schema.maximum = raw.get("maximum")
+    elif field_type == "array":
+        schema.min_items = raw.get("min_items")
+        schema.max_items = raw.get("max_items")
     elif field_type == "array":
         if "items" in raw and isinstance(raw["items"], dict):
             schema.items = _parse_field_schema("items", raw["items"], f"{path}.{name}", errors)
@@ -109,6 +114,16 @@ def _validate_schema_field(
                 field=f"{path}.{name}",
                 message="'max_length' is only valid for string type",
             ))
+        if schema.pattern is not None:
+            errors.append(ValidationError(
+                field=f"{path}.{name}",
+                message="'pattern' is only valid for string type",
+            ))
+        if schema.format is not None:
+            errors.append(ValidationError(
+                field=f"{path}.{name}",
+                message="'format' is only valid for string type",
+            ))
 
     # Numeric constraints only valid for numeric types
     if schema.type not in ("integer", "number"):
@@ -123,6 +138,19 @@ def _validate_schema_field(
                 message="'maximum' is only valid for numeric types",
             ))
 
+    # Array constraints only valid for array type
+    if schema.type != "array":
+        if schema.min_items is not None:
+            errors.append(ValidationError(
+                field=f"{path}.{name}",
+                message="'min_items' is only valid for array type",
+            ))
+        if schema.max_items is not None:
+            errors.append(ValidationError(
+                field=f"{path}.{name}",
+                message="'max_items' is only valid for array type",
+            ))
+
     # Recurse into nested schemas
     if schema.properties:
         for prop_name, prop_schema in schema.properties.items():
@@ -132,8 +160,12 @@ def _validate_schema_field(
 
 
 def _compute_digest(raw_yaml: str) -> str:
-    """Compute SHA-256 digest of raw YAML content."""
-    return hashlib.sha256(raw_yaml.encode("utf-8")).hexdigest()
+    """Compute SHA-256 digest of raw YAML content.
+
+    Returns the digest in the canonical ``sha256:...`` prefixed format
+    defined by SPEC-0001 Section 3.2.
+    """
+    return "sha256:" + hashlib.sha256(raw_yaml.encode("utf-8")).hexdigest()
 
 
 def parse_manifest(source: str | Path) -> tuple[CapabilityManifest, ValidationResult]:
@@ -202,7 +234,13 @@ def parse_manifest(source: str | Path) -> tuple[CapabilityManifest, ValidationRe
     declared_digest = raw_metadata.get("digest")
     if declared_digest:
         computed = _compute_digest(raw_yaml)
-        if declared_digest != computed:
+        # Normalise: strip "sha256:" prefix if present so we can compare
+        # old-style (raw hex) and new-style (sha256:hex) declared digests.
+        _norm_declared = declared_digest
+        if _norm_declared.startswith("sha256:"):
+            _norm_declared = _norm_declared[7:]
+        _norm_computed = computed[7:]  # strip the "sha256:" we just added
+        if _norm_declared != _norm_computed:
             warnings.append(ValidationError(
                 field="metadata.digest",
                 message=f"Declared digest '{declared_digest}' does not match computed digest '{computed}'",
@@ -258,6 +296,12 @@ def parse_manifest(source: str | Path) -> tuple[CapabilityManifest, ValidationRe
             tools=raw_reqs.get("tools"),
             min_context=raw_reqs.get("min_context"),
         )
+        # Validate min_context if present (SPEC-0001 Section 5.2 Rule 4)
+        if requirements.min_context is not None and requirements.min_context < 1024:
+            errors.append(ValidationError(
+                field="spec.requirements.min_context",
+                message=f"min_context must be >= 1024 (got {requirements.min_context})",
+            ))
 
     # Parse security
     raw_security = raw_spec.get("security", {}) if isinstance(raw_spec, dict) else {}

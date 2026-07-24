@@ -36,6 +36,14 @@ from core.recorder import ExecutionRecorder
 # Schema version to support future migrations
 SCHEMA_VERSION = 2
 
+
+def _migrate_event_store_schema(conn: Any) -> None:
+    """Add columns and tables introduced in v0.4.3 if they don't already exist."""
+    # execution_records.context_id
+    existing_rec = {row["name"] for row in conn.execute("PRAGMA table_info(execution_records)")}
+    if "context_id" not in existing_rec:
+        conn.execute("ALTER TABLE execution_records ADD COLUMN context_id TEXT")
+
 # SQL statements for table creation
 CREATE_EVENTS_TABLE = """
 CREATE TABLE IF NOT EXISTS events (
@@ -76,6 +84,7 @@ CREATE TABLE IF NOT EXISTS execution_records (
     total_tokens INTEGER NOT NULL DEFAULT 0,
     agent_id TEXT,
     agent_name TEXT,
+    context_id TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 """
@@ -163,13 +172,24 @@ class EventStore:
             self._local.conn.execute("PRAGMA synchronous=NORMAL;")
         return self._local.conn
 
+    def get_connection(self) -> sqlite3.Connection:
+        """Public accessor for the thread-local database connection.
+
+        External analytics / reporting modules should use this instead
+        of reaching into the private ``_get_conn``.
+        """
+        return self._get_conn()
+
     def _init_db(self) -> None:
         """Initialize database schema."""
         conn = self._get_conn()
+        conn.execute("PRAGMA foreign_keys = ON;")
         conn.execute(CREATE_EVENTS_TABLE)
         conn.execute(CREATE_EXECUTION_RECORDS_TABLE)
         conn.execute(CREATE_TASK_STATE_TABLE)
         conn.execute(CREATE_META_TABLE)
+        # Migrate old tables missing v0.4.3 columns
+        _migrate_event_store_schema(conn)
         for idx in CREATE_INDEXES:
             try:
                 conn.execute(idx)
@@ -278,7 +298,7 @@ class EventStore:
         conn.commit()
         return count
 
-    def save_execution_record(self, record: ExecutionRecord, agent_id: str | None = None, agent_name: str | None = None) -> None:
+    def save_execution_record(self, record: ExecutionRecord, agent_id: str | None = None, agent_name: str | None = None, context_id: str | None = None) -> None:
         """
         Persist an ExecutionRecord to the store.
 
@@ -286,16 +306,18 @@ class EventStore:
             record: The ExecutionRecord to persist.
             agent_id: Optional registered agent ID for this execution.
             agent_name: Optional resolved agent name.
+            context_id: Optional context ID linking this execution to a Context.
         """
         conn = self._get_conn()
+        _ctx_id = context_id or record.context_id
         try:
             conn.execute(
                 """INSERT OR REPLACE INTO execution_records (
                     trace_id, spec_version, manifest_name, manifest_version,
                     runtime_id, adapter, adapter_version, input, output,
                     status, error, total_latency_ms, total_cost_usd, total_tokens,
-                    agent_id, agent_name
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    agent_id, agent_name, context_id
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     record.trace_id,
                     record.spec_version,
@@ -311,8 +333,9 @@ class EventStore:
                     record.total_latency_ms,
                     record.total_cost_usd,
                     record.total_tokens,
-                    agent_id,
+                    agent_id or record.agent_id,
                     agent_name,
+                    _ctx_id,
                 ),
             )
             conn.commit()
@@ -797,3 +820,104 @@ class EventStore:
         deleted = cursor.rowcount
         conn.commit()
         return deleted
+
+    # ── Data Lifecycle (prune / vacuum) ──
+
+    def count_events_before(self, cutoff: str) -> int:
+        """Count events older than *cutoff* (ISO timestamp)."""
+        conn = self._get_conn()
+        cursor = conn.execute(
+            "SELECT COUNT(*) as count FROM events WHERE timestamp < ?",
+            (cutoff,),
+        )
+        return cursor.fetchone()["count"]
+
+    def count_records_before(self, cutoff: str) -> int:
+        """Count execution records older than *cutoff* (ISO timestamp)."""
+        conn = self._get_conn()
+        cursor = conn.execute(
+            "SELECT COUNT(*) as count FROM execution_records WHERE created_at < ?",
+            (cutoff,),
+        )
+        return cursor.fetchone()["count"]
+
+    def delete_events_before(self, cutoff: str) -> int:
+        """Delete all events with ``timestamp`` older than *cutoff*.
+
+        Returns the number of rows removed.
+        """
+        conn = self._get_conn()
+        cursor = conn.execute(
+            "DELETE FROM events WHERE timestamp < ?",
+            (cutoff,),
+        )
+        deleted = cursor.rowcount
+        conn.commit()
+        return deleted
+
+    def delete_records_before(self, cutoff: str) -> int:
+        """Delete all execution records with ``created_at`` older than *cutoff*.
+
+        Returns the number of rows removed.  (Delegates to ``delete_old_records``.)
+        """
+        return self.delete_old_records(cutoff)
+
+    def get_store_size_bytes(self) -> int:
+        """Return the on-disk size of the SQLite database file, or 0 if missing."""
+        try:
+            return self._db_path.stat().st_size
+        except OSError:
+            return 0
+
+    def get_store_stats(self) -> dict[str, int]:
+        """Return a compact summary: total events, total records, and file size."""
+        return {
+            "event_count": self.get_event_count(),
+            "record_count": self.get_record_count(),
+            "size_bytes": self.get_store_size_bytes(),
+        }
+
+    def get_recent_traffic(self, since_iso: str) -> dict[str, int]:
+        """Count proxy-captured API calls since *since_iso* grouped by status."""
+        conn = self._get_conn()
+        cursor = conn.execute(
+            """SELECT
+                 COUNT(*) as total,
+                 SUM(CASE WHEN json_extract(payload, '$.status') = 'success' THEN 1 ELSE 0 END) as success,
+                 SUM(CASE WHEN json_extract(payload, '$.status') = 'failure' THEN 1 ELSE 0 END) as failure
+               FROM events
+               WHERE source = 'proxy' AND timestamp >= ?""",
+            (since_iso,),
+        )
+        row = cursor.fetchone()
+        return {
+            "total": row["total"] or 0,
+            "success": row["success"] or 0,
+            "failure": row["failure"] or 0,
+        }
+
+    def get_agent_summary(self) -> list[dict[str, Any]]:
+        """Return per-agent traffic summary from proxy events."""
+        conn = self._get_conn()
+        cursor = conn.execute("""
+            SELECT
+                COALESCE(json_extract(payload, '$.source_agent'), 'unknown') as agent,
+                COUNT(*) as calls,
+                SUM(CAST(json_extract(payload, '$.total_tokens') AS REAL)) as total_tokens,
+                SUM(CAST(json_extract(payload, '$.cost_usd') AS REAL)) as total_cost
+            FROM events
+            WHERE source = 'proxy'
+            GROUP BY agent
+            ORDER BY calls DESC
+        """)
+        return [dict(row) for row in cursor.fetchall()]
+
+    def get_executions_by_context(self, context_id: str, limit: int = 50) -> list[dict[str, Any]]:
+        """List all execution records linked to a given context."""
+        conn = self._get_conn()
+        cursor = conn.execute(
+            "SELECT * FROM execution_records WHERE context_id = ? ORDER BY created_at DESC LIMIT ?",
+            (context_id, limit),
+        )
+        return [dict(row) for row in cursor.fetchall()]
+

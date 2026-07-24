@@ -124,7 +124,7 @@ def _print_summary(store: Any, trace_ids: list[str]) -> None:
             capability = evt.get("capability", "")
             payload = _parse_payload(evt.get("payload", "{}"))
 
-            if etype == "CapabilityInvoked":
+            if etype in ("CapabilityInvoked", "LlmCall"):
                 if capability:
                     models_used.add(capability)
 

@@ -31,6 +31,7 @@ _STATUS_ICON = {
 _MARKER_MAP = {
     "TaskStarted": "> START",
     "CapabilityInvoked": "> INVOKE",
+    "LlmCall": "> MODEL ",
     "TaskCompleted": "OK DONE ",
     "TaskFailed": "!! FAIL ",
     "TaskRetried": ".. RETRY",
@@ -50,11 +51,14 @@ def _resolve_trace_id(store: Any, trace_id: str) -> str:
         if not all_ids:
             print("No traces found. Run a capability first:")
             print()
-            print("    pip install intentos")
             print("    intent-os run translate -p text=hello -p target_lang=zh")
             print()
             print("  Or try the demo:")
             print("    intent-os demo --auto")
+            print()
+            print("  Or start the proxy to record your own agent:")
+            print("    intent-os proxy start")
+            print("    export OPENAI_BASE_URL=http://localhost:8377")
             print()
             sys.exit(0)
         return all_ids[0]

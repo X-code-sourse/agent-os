@@ -142,3 +142,134 @@ def cmd_analytics(args: Any) -> None:
             print()
         if args.output_path:
             print(f"  Saved to: {args.output_path}")
+
+    elif args.action == "agent":
+        _cmd_analytics_agent(store, args)
+    elif args.action == "compare":
+        _cmd_analytics_compare(store, args)
+    elif args.action == "anomaly":
+        _cmd_analytics_anomaly(store, args)
+    else:
+        print(f"Unknown analytics action: {args.action}", file=sys.stderr)
+        sys.exit(1)
+
+
+def _cmd_analytics_agent(store: Any, args: Any) -> None:
+    """Per-agent execution analytics (Blueprint Phase 2.2)."""
+    from core.execution_analytics import AgentAnalytics
+    aa = AgentAnalytics(store)
+    agent_id = args.agent_id
+    report = aa.agent_summary(agent_id)
+
+    print()
+    print("  ================================================")
+    print("    Agent Analytics")
+    print("  ================================================")
+    print()
+    print(f"  Agent:          {agent_id}")
+    print(f"  Total runs:     {report['total_executions']}")
+    print(f"  Success rate:   {report['success_rate']:.1%}")
+    print(f"  Avg latency:    {report['avg_latency_ms']:.0f}ms")
+    print(f"  Total cost:     ${report['total_cost_usd']:.4f}")
+    print(f"  Total tokens:   {report['total_tokens']}")
+    if report.get('first_seen'):
+        print(f"  First seen:     {report['first_seen'][:19]}")
+    if report.get('last_seen'):
+        print(f"  Last seen:      {report['last_seen'][:19]}")
+    print()
+    if report.get('models_used'):
+        print("  Models used:")
+        for m in report['models_used']:
+            print(f"    {m}")
+        print()
+    if report.get('top_failure_reasons'):
+        print("  Top failure reasons:")
+        for f in report['top_failure_reasons'][:5]:
+            print(f"    {f['error']}: {f['count']} times")
+        print()
+
+
+def _cmd_analytics_compare(store: Any, args: Any) -> None:
+    """Side-by-side agent comparison."""
+    from core.execution_analytics import AgentAnalytics
+    aa = AgentAnalytics(store)
+    result = aa.agent_compare(args.agent_a, args.agent_b)
+
+    print()
+    print("  ================================================")
+    print("    Agent Comparison")
+    print("  ================================================")
+    print()
+    a = result.get('agent_a', {})
+    b = result.get('agent_b', {})
+    d = result.get('delta', {})
+
+    header = f"  {'Metric':<22} {'Agent A':<18} {'Agent B':<18} {'Delta'}"
+    print(header)
+    print(f"  {'-'*70}")
+
+    rows = [
+        ("Success rate", f"{a.get('success_rate',0):.1%}", f"{b.get('success_rate',0):.1%}",
+         f"{d.get('success_rate_diff',0):+.1%}"),
+        ("Total executions", str(a.get('total_executions',0)), str(b.get('total_executions',0)),
+         f"{int(b.get('total_executions',0)) - int(a.get('total_executions',0)):+d}"),
+        ("Avg latency", f"{a.get('avg_latency_ms',0):.0f}ms", f"{b.get('avg_latency_ms',0):.0f}ms",
+         f"{d.get('avg_latency_ratio',1):.2f}x"),
+        ("Total cost", f"${a.get('total_cost_usd',0):.4f}", f"${b.get('total_cost_usd',0):.4f}",
+         f"${d.get('cost_diff_usd',0):+.4f}"),
+    ]
+    for metric, va, vb, vd in rows:
+        print(f"  {metric:<22} {va:<18} {vb:<18} {vd}")
+    print()
+    if d.get('winner'):
+        print(f"  Winner: {d['winner']}")
+        print(f"  Score A: {d.get('score_a',0):.1f} / Score B: {d.get('score_b',0):.1f}")
+    print()
+
+
+def _cmd_analytics_anomaly(store: Any, args: Any) -> None:
+    """Detect execution anomalies."""
+    from core.execution_analytics import AgentAnalytics
+    aa = AgentAnalytics(store)
+    anomalies = aa.detect_anomalies(since_days=_parse_since_days(args.since))
+
+    print()
+    print("  ================================================")
+    print("    Anomaly Detection")
+    print("  ================================================")
+    print()
+    if not anomalies:
+        print("  No anomalies detected.")
+        print()
+        return
+
+    print(f"  Found {len(anomalies)} anomalies:")
+    print()
+    for a in anomalies[:20]:
+        ratio = a.get('ratio', 0)
+        if ratio > 10:
+            severity = "critical"
+        elif ratio > 5:
+            severity = "high"
+        elif ratio > 3:
+            severity = "medium"
+        else:
+            severity = "low"
+        sev = {"critical": "!!", "high": "! ", "medium": "~ ", "low": "  "}.get(severity, '  ')
+        label = a.get('anomaly_type', '?')
+        print(f"  {sev} {label}: {a.get('detail','')}")
+        print(f"     Agent: {a.get('agent_name','?')}  Value: {a.get('value',0):.2f}  Baseline: {a.get('baseline_avg',0):.2f}  Ratio: {ratio:.1f}x")
+        print(f"     Trace: {a.get('trace_id','?')[:24]}  Time: {a.get('timestamp','?')[:19]}")
+        print()
+    if len(anomalies) > 20:
+        print(f"  ... and {len(anomalies) - 20} more.")
+
+
+def _parse_since_days(s: str) -> int:
+    """Parse a duration string like '7d', '24h', '90d' into days."""
+    s = s.strip().lower()
+    if s.endswith('d'):
+        return int(s[:-1])
+    if s.endswith('h'):
+        return max(1, int(s[:-1]) // 24)
+    return 7

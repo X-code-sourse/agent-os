@@ -29,6 +29,9 @@ import commands.cost
 import commands.audit
 import commands.scan
 import commands.agent
+import commands.context
+import commands.evidence
+import commands.prune
 
 # All cmd_* functions are imported from command modules via the registry pattern below
 CMD_MAP = {
@@ -54,6 +57,9 @@ CMD_MAP = {
     "audit": commands.audit.cmd_audit,
     "scan": commands.scan.cmd_scan,
     "agent": commands.agent.cmd_agent,
+    "context": commands.context.cmd_context,
+    "evidence": commands.evidence.cmd_evidence,
+    "prune": commands.prune.cmd_prune,
 }
 
 def build_parser() -> argparse.ArgumentParser:
@@ -97,29 +103,7 @@ def build_parser() -> argparse.ArgumentParser:
     list_parser = subparsers.add_parser("list", help="List available adapters and capabilities")
     list_parser.set_defaults(func=CMD_MAP["list"])
 
-    # registry
-    registry_parser = subparsers.add_parser("registry", help="Manage the capability registry")
-    registry_sub = registry_parser.add_subparsers(dest="action", help="Registry actions")
-    reg_list = registry_sub.add_parser("list", help="List all registered capabilities")
-    reg_list.set_defaults(action="list", func=CMD_MAP["registry"])
-    reg_get = registry_sub.add_parser("get", help="Get capability details")
-    reg_get.add_argument("name", help="Capability name")
-    reg_get.add_argument("--version", "-v", default=None, help="Version (default: latest)")
-    reg_get.set_defaults(func=CMD_MAP["registry"])
-    reg_register = registry_sub.add_parser("register", help="Register a capability from a Manifest")
-    reg_register.add_argument("manifest_path", help="Path to Capability Manifest YAML file")
-    reg_register.set_defaults(func=CMD_MAP["registry"])
-    reg_unregister = registry_sub.add_parser("unregister", help="Unregister a capability")
-    reg_unregister.add_argument("name", help="Capability name")
-    reg_unregister.add_argument("--version", "-v", default=None, help="Version (omit for all)")
-    reg_unregister.set_defaults(func=CMD_MAP["registry"])
-    reg_export = registry_sub.add_parser("export", help="Export registry snapshot to JSON")
-    reg_export.add_argument("output_path", help="Output JSON file path")
-    reg_export.set_defaults(func=CMD_MAP["registry"])
-    reg_search = registry_sub.add_parser("search", help="Semantic search for capabilities by text query")
-    reg_search.add_argument("query", help="Free-text search query")
-    reg_search.add_argument("--limit", "-l", type=int, default=10, help="Max results (default: 10)")
-    reg_search.set_defaults(func=CMD_MAP["registry"])
+    # registry — defined below with extended marketplace subcommands
 
     # security
     _build_security_parser(subparsers)
@@ -139,6 +123,12 @@ def build_parser() -> argparse.ArgumentParser:
     ev_query.add_argument("--runtime", default=None)
     ev_query.add_argument("--limit", type=int, default=20)
     ev_query.set_defaults(func=CMD_MAP["event"])
+    ev_prune = event_sub.add_parser("prune", help="Prune events older than N days")
+    ev_prune.add_argument("--older-than", type=int, default=90,
+                          help="Prune events older than N days (default: 90)")
+    ev_prune.add_argument("--force", action="store_true",
+                          help="Actually delete (default: dry-run)")
+    ev_prune.set_defaults(func=CMD_MAP["prune"])
 
     # analytics
     analytics_parser = subparsers.add_parser("analytics", help="Analyze execution history")
@@ -157,6 +147,17 @@ def build_parser() -> argparse.ArgumentParser:
     an_export.add_argument("output_path", nargs="?", default=None)
     an_export.add_argument("--limit", type=int, default=1000)
     an_export.set_defaults(func=CMD_MAP["analytics"])
+    # Blueprint Phase 2.2: Agent-centric analytics
+    an_agent = analytics_sub.add_parser("agent", help="Per-agent execution analytics")
+    an_agent.add_argument("agent_id", help="Agent ID to analyze")
+    an_agent.set_defaults(func=CMD_MAP["analytics"])
+    an_compare = analytics_sub.add_parser("compare", help="Side-by-side agent comparison")
+    an_compare.add_argument("--agent-a", required=True, help="First agent ID")
+    an_compare.add_argument("--agent-b", required=True, help="Second agent ID")
+    an_compare.set_defaults(func=CMD_MAP["analytics"])
+    an_anomaly = analytics_sub.add_parser("anomaly", help="Detect execution anomalies")
+    an_anomaly.add_argument("--since", default="7d", help="Time window (default: 7d)")
+    an_anomaly.set_defaults(func=CMD_MAP["analytics"])
 
     # workflow
     workflow_parser = subparsers.add_parser("workflow", help="Plan and run workflows")
@@ -265,6 +266,10 @@ def build_parser() -> argparse.ArgumentParser:
     pst.add_argument("--port", type=int, default=8377, help="Port (default: 8377)")
     pst.add_argument("--host", default="127.0.0.1", help="Host (default: 127.0.0.1)")
     pst.set_defaults(func=CMD_MAP["proxy"])
+    pdoc = proxy_sub.add_parser("doctor", help="Run a full proxy health check")
+    pdoc.add_argument("--port", type=int, default=8377, help="Port (default: 8377)")
+    pdoc.add_argument("--host", default="127.0.0.1", help="Host (default: 127.0.0.1)")
+    pdoc.set_defaults(func=CMD_MAP["proxy"])
 
     # doctor
     doctor_parser = subparsers.add_parser("doctor",
@@ -320,15 +325,169 @@ def build_parser() -> argparse.ArgumentParser:
     ac = agent_sub.add_parser("create", help="Register a new agent")
     ac.add_argument("--name", "-n", default="", help="Human-readable name for the agent")
     ac.add_argument("--description", "-d", default="", help="Description of what the agent does")
+    ac.add_argument("--owner", default="", help="Who owns this agent (user ID)")
+    ac.add_argument("--team", default=None, help="Team ID this agent belongs to")
     ac.set_defaults(func=CMD_MAP["agent"])
     al = agent_sub.add_parser("list", help="List all registered agents")
+    al.add_argument("--team", default=None, help="Filter by team ID")
     al.set_defaults(func=CMD_MAP["agent"])
     ag = agent_sub.add_parser("get", help="Get agent details")
     ag.add_argument("agent_id", help="Agent ID to look up")
     ag.set_defaults(func=CMD_MAP["agent"])
+    au = agent_sub.add_parser("update", help="Update agent fields")
+    au.add_argument("agent_id", help="Agent ID to update")
+    au.add_argument("--name", default=None, help="New name")
+    au.add_argument("--description", default=None, help="New description")
+    au.add_argument("--owner", default=None, help="New owner")
+    au.add_argument("--team", default=None, help="New team ID")
+    au.add_argument("--status", default=None, help="New status (active/paused/revoked)")
+    au.add_argument("--capability", action="append", default=None, help="Grant capability (repeatable)")
+    au.add_argument("--policy", action="append", default=None, help="Assign policy (repeatable)")
+    au.set_defaults(func=CMD_MAP["agent"])
     ad = agent_sub.add_parser("delete", help="Delete an agent")
     ad.add_argument("agent_id", help="Agent ID to delete")
     ad.set_defaults(func=CMD_MAP["agent"])
+    # Blueprint Phase 2: agent status + capability management
+    ast = agent_sub.add_parser("status", help="Show agent execution statistics")
+    ast.add_argument("agent_id", help="Agent ID")
+    ast.set_defaults(func=CMD_MAP["agent"])
+    acap = agent_sub.add_parser("capability", help="Manage agent capabilities")
+    acap_sub = acap.add_subparsers(dest="capability_action")
+    acap_grant = acap_sub.add_parser("grant", help="Grant a capability to an agent")
+    acap_grant.add_argument("--agent", required=True, help="Agent ID")
+    acap_grant.add_argument("--capability", required=True, help="Capability name")
+    acap_grant.set_defaults(func=CMD_MAP["agent"])
+    acap_revoke = acap_sub.add_parser("revoke", help="Revoke a capability")
+    acap_revoke.add_argument("--agent", required=True, help="Agent ID")
+    acap_revoke.add_argument("--capability", required=True, help="Capability name")
+    acap_revoke.set_defaults(func=CMD_MAP["agent"])
+    acap_list = acap_sub.add_parser("list", help="List agent capabilities")
+    acap_list.add_argument("agent_id", help="Agent ID")
+    acap_list.set_defaults(func=CMD_MAP["agent"])
+    # Team subcommands
+    atc = agent_sub.add_parser("team", help="Team management")
+    atc_sub = atc.add_subparsers(dest="team_action")
+    atc_create = atc_sub.add_parser("create", help="Create a new team")
+    atc_create.add_argument("--name", "-n", required=True, help="Team name")
+    atc_create.add_argument("--description", "-d", default="", help="Team description")
+    atc_create.add_argument("--owner", default="", help="Team owner")
+    atc_create.set_defaults(func=CMD_MAP["agent"])
+    atc_list = atc_sub.add_parser("list", help="List all teams")
+    atc_list.set_defaults(func=CMD_MAP["agent"])
+    atc_get = atc_sub.add_parser("get", help="Get team details")
+    atc_get.add_argument("team_id", help="Team ID")
+    atc_get.set_defaults(func=CMD_MAP["agent"])
+    atc_add = atc_sub.add_parser("add", help="Add agent to team")
+    atc_add.add_argument("--team", required=True, help="Team ID")
+    atc_add.add_argument("--agent", required=True, help="Agent ID")
+    atc_add.set_defaults(func=CMD_MAP["agent"])
+
+    # context
+    ctx_parser = subparsers.add_parser("context",
+        help="Manage execution contexts — the environment an Agent runs in")
+    ctx_sub = ctx_parser.add_subparsers(dest="context_action", help="Context actions")
+    ctx_create = ctx_sub.add_parser("create", help="Create a new execution context")
+    ctx_create.add_argument("--name", required=True, help="Context name")
+    ctx_create.add_argument("--goal", default="", help="Goal description")
+    ctx_create.add_argument("--constraint", action="append", default=None,
+                            help="Constraint (repeatable, e.g. 'SEC sources only')")
+    ctx_create.add_argument("--scope", default="", help="Task scope (research, trading, etc.)")
+    ctx_create.add_argument("--parent", default=None, help="Parent context ID")
+    ctx_create.add_argument("--created-by", default="", help="Who created this context")
+    ctx_create.set_defaults(func=CMD_MAP["context"])
+    ctx_list = ctx_sub.add_parser("list", help="List contexts")
+    ctx_list.add_argument("--created-by", default=None, help="Filter by creator")
+    ctx_list.add_argument("--agent", default=None, help="Filter by assigned agent")
+    ctx_list.set_defaults(func=CMD_MAP["context"])
+    ctx_get = ctx_sub.add_parser("get", help="Get context details")
+    ctx_get.add_argument("context_id", help="Context ID")
+    ctx_get.set_defaults(func=CMD_MAP["context"])
+    ctx_inspect = ctx_sub.add_parser("inspect", help="Inspect a context and its assignments")
+    ctx_inspect.add_argument("context_id", help="Context ID")
+    ctx_inspect.set_defaults(func=CMD_MAP["context"])
+    ctx_assign = ctx_sub.add_parser("assign", help="Assign an agent to a context")
+    ctx_assign.add_argument("context_id", help="Context ID")
+    ctx_assign.add_argument("--agent", required=True, help="Agent ID to assign")
+    ctx_assign.set_defaults(func=CMD_MAP["context"])
+    ctx_agents = ctx_sub.add_parser("agents", help="List agents assigned to a context")
+    ctx_agents.add_argument("context_id", help="Context ID")
+    ctx_agents.set_defaults(func=CMD_MAP["context"])
+    ctx_delete = ctx_sub.add_parser("delete", help="Delete a context")
+    ctx_delete.add_argument("context_id", help="Context ID")
+    ctx_delete.set_defaults(func=CMD_MAP["context"])
+
+    # evidence
+    evi_parser = subparsers.add_parser("evidence",
+        help="Manage verification evidence for Agent outputs")
+    evi_sub = evi_parser.add_subparsers(dest="evidence_action", help="Evidence actions")
+    evi_add = evi_sub.add_parser("add", help="Add evidence to an execution")
+    evi_add.add_argument("--execution", required=True, help="Execution ID (trace_id)")
+    evi_add.add_argument("--claim", required=True, help="The claim being made")
+    evi_add.add_argument("--source-type", default="model_inference",
+                         help="Source type: data/calculation/model_inference/external_api")
+    evi_add.add_argument("--source-ref", default="", help="Source reference (URL, doc, etc.)")
+    evi_add.add_argument("--data-ref", default="", help="Raw data reference")
+    evi_add.add_argument("--confidence", type=float, default=0.0, help="Confidence 0.0-1.0")
+    evi_add.set_defaults(func=CMD_MAP["evidence"])
+    evi_list = evi_sub.add_parser("list", help="List evidence for an execution")
+    evi_list.add_argument("execution_id", help="Execution ID")
+    evi_list.set_defaults(func=CMD_MAP["evidence"])
+    evi_verify = evi_sub.add_parser("verify", help="Manually verify an evidence record")
+    evi_verify.add_argument("evidence_id", help="Evidence ID")
+    evi_verify.add_argument("--by", default="user", help="Who verified this")
+    evi_verify.set_defaults(func=CMD_MAP["evidence"])
+    evi_chain = evi_sub.add_parser("chain", help="Show evidence chain for an execution")
+    evi_chain.add_argument("execution_id", help="Execution ID")
+    evi_chain.set_defaults(func=CMD_MAP["evidence"])
+    evi_unverified = evi_sub.add_parser("unverified", help="List unverified evidence")
+    evi_unverified.add_argument("--limit", type=int, default=50, help="Max results")
+    evi_unverified.set_defaults(func=CMD_MAP["evidence"])
+
+    # registry — extended
+    reg_parser_2 = subparsers.add_parser("registry",
+        help="Manage the capability registry and marketplace")
+    reg_sub_2 = reg_parser_2.add_subparsers(dest="action", help="Registry actions")
+    reg_list_2 = reg_sub_2.add_parser("list", help="List all registered capabilities")
+    reg_list_2.set_defaults(action="list", func=CMD_MAP["registry"])
+    reg_get_2 = reg_sub_2.add_parser("get", help="Get capability details")
+    reg_get_2.add_argument("name", help="Capability name")
+    reg_get_2.add_argument("--version", "-v", default=None, help="Version (default: latest)")
+    reg_get_2.set_defaults(func=CMD_MAP["registry"])
+    reg_register_2 = reg_sub_2.add_parser("register", help="Register a capability from a Manifest")
+    reg_register_2.add_argument("manifest_path", help="Path to Capability Manifest YAML file")
+    reg_register_2.set_defaults(func=CMD_MAP["registry"])
+    reg_unregister_2 = reg_sub_2.add_parser("unregister", help="Unregister a capability")
+    reg_unregister_2.add_argument("name", help="Capability name")
+    reg_unregister_2.add_argument("--version", "-v", default=None, help="Version (omit for all)")
+    reg_unregister_2.set_defaults(func=CMD_MAP["registry"])
+    reg_export_2 = reg_sub_2.add_parser("export", help="Export registry snapshot to JSON")
+    reg_export_2.add_argument("output_path", help="Output JSON file path")
+    reg_export_2.set_defaults(func=CMD_MAP["registry"])
+    reg_search_2 = reg_sub_2.add_parser("search", help="Semantic search for capabilities by text query")
+    reg_search_2.add_argument("query", help="Free-text search query")
+    reg_search_2.add_argument("--limit", "-l", type=int, default=10, help="Max results (default: 10)")
+    reg_search_2.set_defaults(func=CMD_MAP["registry"])
+    reg_publish = reg_sub_2.add_parser("publish", help="Publish a capability to the marketplace")
+    reg_publish.add_argument("manifest_path", help="Path to Capability Manifest YAML file")
+    reg_publish.add_argument("--visibility", default="public",
+                             help="Visibility: public/team/private (default: public)")
+    reg_publish.add_argument("--publisher", default="", help="Who is publishing")
+    reg_publish.set_defaults(func=CMD_MAP["registry"])
+    reg_discover = reg_sub_2.add_parser("discover", help="Discover published capabilities")
+    reg_discover.add_argument("query", nargs="?", default="", help="Search query (empty = all)")
+    reg_discover.add_argument("--limit", type=int, default=10, help="Max results")
+    reg_discover.add_argument("--visibility", default=None, help="Filter by visibility")
+    reg_discover.set_defaults(func=CMD_MAP["registry"])
+    reg_show = reg_sub_2.add_parser("show", help="Show capability marketplace details")
+    reg_show.add_argument("capability_id", help="Capability ID (name@version)")
+    reg_show.set_defaults(func=CMD_MAP["registry"])
+    reg_install = reg_sub_2.add_parser("install", help="Install a capability from the marketplace")
+    reg_install.add_argument("capability_id", help="Capability ID (name@version)")
+    reg_install.set_defaults(func=CMD_MAP["registry"])
+    reg_rate = reg_sub_2.add_parser("rate", help="Rate a capability in the marketplace")
+    reg_rate.add_argument("capability_id", help="Capability ID (name@version)")
+    reg_rate.add_argument("--score", type=float, required=True, help="Rating score (0.0 - 5.0)")
+    reg_rate.set_defaults(func=CMD_MAP["registry"])
 
     return parser
 

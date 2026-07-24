@@ -529,7 +529,7 @@ class SecurityManager:
 
     This class **holds no mutable evaluation state** — all decision logic
     is driven from the current snapshot of the :class:`PolicyStore` and the
-    capability + context passed to :meth:`evaluate`. Every evaluation is
+    capability + context passed to :meth:`evaluate`.  Every evaluation is
     recorded as a ``PolicyEvaluated`` event in the :class:`EventStore`.
 
     The manager follows a simple decision tree:
@@ -579,8 +579,6 @@ class SecurityManager:
         """
         self._policy_store = policy_store
         self._event_store = event_store
-        self._trace_id: str | None = None
-        self._sequence: int = 0
 
     # ────────────────────────────────────────────────────────────
     # Public API
@@ -640,8 +638,9 @@ class SecurityManager:
         cap_name: str = spec.name
         baseline_risk: SecurityRisk = spec.risk
 
-        self._sequence += 1
-        trace_id: str = self._trace_id or str(uuid.uuid4())
+        # Every evaluation gets a fresh trace_id — SecurityManager owns
+        # no session state (R1 compliance).
+        trace_id: str = str(uuid.uuid4())
 
         # ── Step 1: Load matching policies ──
         policies = self._policy_store.get_for_capability(cap_name, ctx)
@@ -812,7 +811,7 @@ class SecurityManager:
             event_type=EventType.POLICY_EVALUATED,
             trace_id=trace_id or str(uuid.uuid4()),
             source="security_manager",
-            sequence=self._sequence,
+            sequence=1,
             payload={
                 "policy_id": result.policy_id,
                 "capability": result.capability_name,

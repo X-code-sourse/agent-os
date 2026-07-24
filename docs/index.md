@@ -76,7 +76,7 @@ They are complementary: Intent OS can consume MCP servers as capability provider
 
 ## Project Status
 
-:material-test-tube: **709 tests passed, 8 skipped, 0 failures** — CI across Python 3.10, 3.11, and 3.12.
+:material-test-tube: **731 tests passed, 8 skipped, 0 failures** — CI across Python 3.10, 3.11, and 3.12.
 
 Intent OS is building the execution layer for AI agents. [See the specs](https://github.com/haihaoxu/intentos/tree/main/specs) for details.
 

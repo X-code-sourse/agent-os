@@ -113,7 +113,7 @@ def cmd_doctor(args: Any) -> None:
     all_ids = store.get_all_trace_ids()
 
     if not all_ids:
-        # No traces yet — guide the user to create one
+        # No traces yet — guide the user through first-run setup
         print()
         print("  ================================================")
         print("    Intent OS Doctor - Health Check")
@@ -121,14 +121,19 @@ def cmd_doctor(args: Any) -> None:
         print()
         print("  No agent executions found.")
         print()
-        print("  Run a demo to see how it works:")
-        print("    intent-os demo --auto")
+        print("  Get started in 4 steps:")
         print()
-        print("  Or run a capability:")
-        print("    intent-os run translate -p text=hello -p target_lang=zh")
+        print("    1. Start the proxy:")
+        print("       intent-os proxy start")
         print()
-        print("  Want to record your own AI agent?")
-        print("    intent-os proxy start")
+        print("    2. Set environment variables:")
+        print("       export OPENAI_BASE_URL=http://localhost:8377")
+        print("       export ANTHROPIC_BASE_URL=http://localhost:8377")
+        print()
+        print("    3. Use your AI agent normally (Claude Code, Cursor, etc.)")
+        print()
+        print("    4. Come back and run doctor:")
+        print("       intent-os doctor")
         print()
         return
 

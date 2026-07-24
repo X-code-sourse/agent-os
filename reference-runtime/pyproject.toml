@@ -5,14 +5,14 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "intentos"
 version = "0.4.3"
-description = "An open-source flight recorder for AI agents — see what your agent did, why it failed, and what it cost"
+description = "Open-source flight recorder for AI agents — see exactly what your agent did, why it failed, and what it cost"
 readme = "README.md"
 requires-python = ">=3.10"
-license = "MIT"
+license = "AGPL-3.0-only"
 authors = [
     {name = "Intent OS Project"},
 ]
-keywords = ["ai", "interoperability", "llm", "capability", "workflow", "manifest"]
+keywords = ["ai", "agent", "observability", "flight-recorder", "proxy", "debugging", "cost-tracking", "llm", "cli", "claude-code", "cursor"]
 dependencies = [
     "pyyaml>=6.0",
     "requests>=2.28",
@@ -20,7 +20,11 @@ dependencies = [
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
+    "License :: OSI Approved :: GNU Affero General Public License v3",
+    "Operating System :: OS Independent",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Debuggers",
+    "Topic :: System :: Monitoring",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
@@ -35,7 +39,7 @@ all = ["ask", "requests>=2.28"]
 
 [project.urls]
 Homepage = "https://github.com/haihaoxu/intentos"
-Documentation = "https://intent-os.org"
+Documentation = "https://haihaoxu.github.io/intentos/"
 Source = "https://github.com/haihaoxu/intentos"
 BugTracker = "https://github.com/haihaoxu/intentos/issues"
 

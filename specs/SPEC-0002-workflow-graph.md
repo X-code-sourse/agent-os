@@ -1,8 +1,26 @@
 # SPEC-0002: Workflow Graph
 
-> **Status:** Draft v0.1 — Phase 0 (Structure) / Phase 1 (Execution Semantics)
+> **Status:** Frozen v1.0 — Partially implemented in reference-runtime v0.4.3
 > **Scope:** Defines the format for composing capabilities into executable workflows
 > **Editor:** Intent OS Project
+
+---
+
+## Implementation Note
+
+This spec is **frozen at v1.0** as the authoritative contract for Workflow Graph structure and execution semantics. The reference-runtime v0.4.3 implements a subset of the full spec. Each policy section below is annotated with its implementation status in v0.4.3:
+
+| Policy | Parser Status | Scheduler Enforcement | Phase |
+|---|---|---|---|
+| Retry | Fully parsed | Fully enforced | Phase 1 |
+| Timeout | Fully parsed | Fully enforced | Phase 1 |
+| Failure | Fully parsed | Fully enforced | Phase 1 |
+| Parallel | Fully parsed | Fully enforced | Phase 1 |
+| Lifecycle | Parsed, defaults applied | Not enforced | Phase 2+ |
+| Compensation | Parsed, defaults applied | Stub only (NONE default) | Phase 2+ |
+| Checkpoint | Parsed, defaults applied | Not enforced | Phase 2+ |
+
+The `ExecutionSemantics` dataclass declares all seven policy types with sensible defaults. The YAML parser (`workflow_parser.py`) and Scheduler (`scheduler.py`) fully enforce the behavioral contract for retry, timeout, failure, and parallel policies. Lifecycle, compensation, and checkpoint are reserved for Phase 2+ and currently operate on defaults only.
 
 ---
 
@@ -49,7 +67,7 @@ metadata:
 
 spec:
   goal: string                # Optional. Human-readable goal description
-  
+
   tasks:                      # Required. At least one task
     - id: string              # Required. Unique task ID within workflow
       capability: string      # Required. Reference to Capability Manifest
@@ -139,7 +157,11 @@ semantics:
   checkpoint: CheckpointPolicy     # State persistence (Phase 2+)
 ```
 
+---
+
 ### 4.2 Retry Policy
+
+> **Implementation status:** Fully implemented in v0.4.3 — parsed from YAML, enforced by Scheduler.
 
 ```yaml
 semantics:
@@ -159,7 +181,9 @@ semantics:
 **Strategies:**
 - `fixed`: Retry at a fixed interval (`initial_interval`)
 - `exponential`: Retry with exponential backoff: `interval * multiplier^attempt`
-- `none`: No retry — fail immediately
+- `none`: No retry -- fail immediately
+
+**Enforcement in v0.4.3:** The Scheduler's `_execute_single_task()` drives the retry loop, `_compute_backoff()` applies the configured strategy, and `_is_retriable()` matches error strings against `retryable_errors`. State transitions through `FAILED_RETRIABLE` back to `READY` with backoff delay.
 
 **Default** (if omitted):
 ```yaml
@@ -175,7 +199,11 @@ retry:
     - server_error
 ```
 
+---
+
 ### 4.3 Timeout Policy
+
+> **Implementation status:** Fully implemented in v0.4.3 — parsed from YAML, enforced by Scheduler.
 
 ```yaml
 semantics:
@@ -186,6 +214,8 @@ semantics:
     retry_on_timeout: true          # Whether to retry on timeout (default: true)
 ```
 
+**Enforcement in v0.4.3:** The Scheduler checks `task_ms` before each task execution. Tasks exceeding the timeout transition to `TIMEOUT` status. The `workflow_ms` total workflow timeout is declared in the policy but full enforcement is pending improved threading/async support.
+
 **Default** (if omitted):
 ```yaml
 timeout:
@@ -195,7 +225,11 @@ timeout:
   retry_on_timeout: true
 ```
 
+---
+
 ### 4.4 Failure Policy
+
+> **Implementation status:** Fully implemented in v0.4.3 — parsed from YAML, enforced by Scheduler.
 
 ```yaml
 semantics:
@@ -212,6 +246,8 @@ semantics:
 - `deferred`: Continue executing tasks that don't depend on the failed task; only fail the workflow if the output is unrecoverable.
 - `none`: Record the failure but continue all other tasks. The workflow's final output will indicate which tasks failed.
 
+**Enforcement in v0.4.3:** The Scheduler's `_should_skip_due_to_failure()` checks `cancel_dependents` to skip tasks whose upstream dependencies have `FAILED_FATAL`, `TIMEOUT`, or `CANCELLED` status. The propagation mode is checked in `_execute_single_task()` — `immediate` sets the workflow status to `FAILED` on first fatal failure; `none` ignores the `max_failures` threshold. The `continue_independents` flag controls whether independent branches proceed. `max_failures` gates the threshold before the workflow is marked `FAILED`.
+
 **Default** (if omitted):
 ```yaml
 failure:
@@ -222,7 +258,11 @@ failure:
   max_failures: 1
 ```
 
+---
+
 ### 4.5 Parallel Policy
+
+> **Implementation status:** Fully implemented in v0.4.3 — parsed from YAML, enforced by Scheduler.
 
 ```yaml
 semantics:
@@ -241,6 +281,8 @@ semantics:
 - `merge`: Outputs are merged into a single object (keyed by source task ID)
 - `first_complete`: Only the first completed output is passed; others are discarded
 
+**Enforcement in v0.4.3:** The Scheduler's `_process_levels()` dispatches tasks level-by-level. When strategy is `sequential` (or only one task at the level), `_execute_single_task()` is called one at a time. Otherwise, `_execute_parallel_tasks()` spawns threads in batches of `max_concurrency` (unlimited when 0). The `merge_strategy` is declared in the policy but actual merge behavior at fan-in points is handled by the runtime's output collection mechanism.
+
 **Default** (if omitted):
 ```yaml
 parallel:
@@ -249,7 +291,11 @@ parallel:
   merge_strategy: collect
 ```
 
+---
+
 ### 4.6 Lifecycle Policy
+
+> **Implementation status:** Parsed (defaults applied), not actively enforced by Scheduler. Full enforcement planned for Phase 2+.
 
 ```yaml
 semantics:
@@ -263,6 +309,8 @@ semantics:
 - `on_demand`: Tasks are initialized only when ready to execute (conserves resources)
 - `eager`: Tasks are initialized as soon as the workflow starts (faster execution at higher cost)
 
+**Enforcement in v0.4.3:** The `LifecyclePolicy` dataclass is defined with defaults (`on_demand`, `on_complete`, `allowed`) but the Scheduler does not actively gate task initialization or cleanup based on these settings. All tasks are effectively initialized on-demand.
+
 **Default** (if omitted):
 ```yaml
 lifecycle:
@@ -271,7 +319,11 @@ lifecycle:
   caching: allowed
 ```
 
-### 4.7 Compensation Policy (Phase 2+)
+---
+
+### 4.7 Compensation Policy
+
+> **Implementation status:** Parsed (defaults applied), stub enforcement only. Defaults to `strategy: none`. Full enforcement planned for Phase 2+.
 
 ```yaml
 semantics:
@@ -281,9 +333,27 @@ semantics:
     order: reverse                    # forward | reverse (reverse = last failed, first compensated)
 ```
 
-Reserved for Phase 2+ when workflows support compensatory actions for rollback.
+**Strategies:**
+- `rollback`: Mark all completed tasks as cancelled in reverse order. No data mutation -- tasks are flagged `CANCELLED` but their outputs remain in the event store.
+- `compensate`: Execute a designated compensation capability per task.
+- `none`: No compensation. Failed workflows leave completed task outputs intact.
 
-### 4.8 Checkpoint Policy (Phase 2+)
+**Enforcement in v0.4.3:** The Scheduler's `_execute_compensation()` is called when the workflow reaches `FAILED` or `PARTIAL` status. With the default `strategy: none`, it returns immediately. When `strategy: rollback`, completed tasks are marked `CANCELLED` in reverse order and events are recorded. The `compensate` strategy records a "not implemented" event. Full compensation with custom action capabilities and `max_compensation_attempts` is deferred to Phase 2+.
+
+**Default** (if omitted):
+```yaml
+compensation:
+  strategy: none
+  action: null
+  order: reverse
+  max_compensation_attempts: 1
+```
+
+---
+
+### 4.8 Checkpoint Policy
+
+> **Implementation status:** Parsed (defaults applied), not enforced. Reserved for Phase 2+.
 
 ```yaml
 semantics:
@@ -293,7 +363,15 @@ semantics:
     resume: auto                     # auto | manual
 ```
 
-Reserved for Phase 2+ when workflows support long-running execution with failure recovery.
+**Enforcement in v0.4.3:** The `CheckpointPolicy` dataclass is defined with defaults (`task`, `event_store`, `auto`) but is not connected to any Scheduler behavior. R1-compliant task state persistence is handled by `_sync_task_state_to_store()`, which writes completed task outputs and errors to the Event Store independent of the checkpoint policy. Full checkpoint/resume cycles with mid-workflow recovery are reserved for Phase 2+.
+
+**Default** (if omitted):
+```yaml
+checkpoint:
+  interval: task
+  store: event_store
+  resume: auto
+```
 
 ---
 
@@ -434,11 +512,11 @@ Runtime A and Runtime B both compliant with this Spec MUST produce the same obse
 ## 7. Validation Rules
 
 ### 7.1 Required Fields
-- `kind` — must equal "Workflow"
+- `kind` -- must equal "Workflow"
 - `metadata.name`
 - `metadata.version`
-- `spec.tasks` — at least one task
-- `spec.semantics` — all top-level semantic fields have valid defaults if omitted
+- `spec.tasks` -- at least one task
+- `spec.semantics` -- all top-level semantic fields have valid defaults if omitted
 
 ### 7.2 Graph Validation
 
@@ -463,15 +541,18 @@ Additionally:
 
 ## 9. Future Extensions (Phase 2+)
 
-| Extension | Description | Phase |
-|---|---|---|
-| **Conditional branches** | if/else or switch based on task output | Phase 2 |
-| **Loops/iteration** | Execute subgraph N times with dynamic input | Phase 2 |
-| **Dynamic task generation** | Tasks created at runtime based on prior output | Phase 2 |
-| **Nested workflows** | Workflow as a task within another workflow | Phase 2 |
-| **Human review gates** | Workflow pauses for human approval at checkpoint | Phase 2 |
-| **Cost budgets** | Enforce per-workflow or per-task cost limits | Phase 2 |
-| **Data flow schemas** | Typed data flow with transformation functions | Phase 3 |
+| Extension | Description | Phase | Status in v0.4.3 |
+|---|---|---|---|
+| **Lifecycle enforcement** | Task init (on_demand vs eager), cleanup, caching control | Phase 2 | Dataclass defined; Scheduler ignores |
+| **Compensation enforcement** | Full rollback with custom compensation actions per task | Phase 2 | Stub: NONE default; rollback marks CANCELLED |
+| **Checkpoint/resume** | Mid-workflow state persistence with recovery | Phase 2 | Dataclass defined; Scheduler ignores |
+| **Conditional branches** | if/else or switch based on task output | Phase 2 | Edge condition field defined; not yet enforced |
+| **Loops/iteration** | Execute subgraph N times with dynamic input | Phase 2 | Not started |
+| **Dynamic task generation** | Tasks created at runtime based on prior output | Phase 2 | Not started |
+| **Nested workflows** | Workflow as a task within another workflow | Phase 2 | Not started |
+| **Human review gates** | Workflow pauses for human approval at checkpoint | Phase 2 | Not started |
+| **Cost budgets** | Enforce per-workflow or per-task cost limits | Phase 2 | Not started |
+| **Data flow schemas** | Typed data flow with transformation functions | Phase 3 | Not started |
 
 ---
 

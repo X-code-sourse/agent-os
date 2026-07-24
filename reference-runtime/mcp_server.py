@@ -228,6 +228,9 @@ class MCPServer:
             error_msg = record.error or "Execution returned non-success status"
             return jsonrpc_error(-32603, error_msg, id=msg_id)
 
+        # Track usage on the marketplace entry (BluePrint Layer 6)
+        self.registry.record_usage(manifest.id)
+
         # Strip internal fields from output
         output = record.output
         if isinstance(output, dict):
