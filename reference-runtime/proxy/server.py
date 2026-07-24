@@ -228,6 +228,25 @@ class ProxyHandler(BaseHTTPRequestHandler):
         except json.JSONDecodeError:
             pass
 
+        # ── Phase C: Inject agent context into the LLM request ──
+        if self._agent_id and request_body:
+            try:
+                from core.context_injector import build_injection_prompt
+                prompt = build_injection_prompt(self._agent_id)
+                if prompt:
+                    if provider == "openai":
+                        msgs = request_body.get("messages", [])
+                        msgs.insert(0, {"role": "system", "content": prompt})
+                        request_body["messages"] = msgs
+                    elif provider == "anthropic":
+                        existing = request_body.get("system", "")
+                        new_system = f"{existing}\n\n{prompt}" if existing else prompt
+                        request_body["system"] = new_system
+                    body = json.dumps(request_body, ensure_ascii=False).encode("utf-8")
+            except Exception:
+                pass  # Injection failure never blocks the request
+        # ═══════════════════════════════════════════════════════
+
         model = _get_model_from_request(request_body)
         agent = detect_agent(dict(self.headers))
 

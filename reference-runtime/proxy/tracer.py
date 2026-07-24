@@ -81,6 +81,9 @@ class AgentTracer:
             store = EventStore(str(store_dir / "events.db"))
         self._store = store
         self._trace_id: str | None = None
+        # Phase C: auto-extraction counters
+        self._call_count: int = 0
+        self._extract_threshold: int = 50
 
     @property
     def trace_id(self) -> str:
@@ -157,7 +160,29 @@ class AgentTracer:
         }
 
         self._store.save_event(event)
+
+        # ── Phase C: Auto-extract experiences every N calls ──
+        if agent_id:
+            self._call_count += 1
+            if self._call_count % self._extract_threshold == 0:
+                self._auto_extract(agent_id)
+
         return self.trace_id
+
+    def _auto_extract(self, agent_id: str) -> None:
+        """Trigger experience extraction in background — never blocks."""
+        try:
+            from core.experience_extractor import ExperienceExtractor
+            from core.experience_store import ExperienceStore
+
+            exp_store = ExperienceStore()
+            extractor = ExperienceExtractor(
+                event_store=self._store,
+                experience_store=exp_store,
+            )
+            extractor.extract_all(agent_id)
+        except Exception:
+            pass  # Auto-extraction is best-effort
 
 
 

@@ -265,3 +265,15 @@ def cmd_doctor(args: Any) -> None:
     print(f"  {next_step}")
     print(f"  {'=' * 48}")
     print()
+
+    # Phase C: feedback loop hint
+    try:
+        agent_id = (record or {}).get("agent_id", "")
+        if agent_id:
+            print(f"  Was this diagnosis helpful?  Record your feedback:")
+            print(f"    intent-os experience record --agent {agent_id} \\")
+            print(f"      --type user_feedback \\")
+            print(f"      --observation \"diagnosis was correct because ...\"")
+            print()
+    except Exception:
+        pass

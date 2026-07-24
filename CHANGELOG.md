@@ -4,6 +4,18 @@ All notable changes to Intent OS are documented here.
 
 ---
 
+## v0.8.0 (2026-07-24)
+
+### Runtime Self-Awareness — Agent Knows Who It Is
+
+- **Proxy now injects agent identity into LLM requests** — When `intent-os proxy start --agent <id>` is used, the proxy automatically injects a system prompt containing the agent's persona, traits, and recent experiences into every LLM API call. The agent now knows who it is and what it has learned.
+- **`core/context_injector.py`** — New module: `build_injection_prompt()` queries AgentStore, ExperienceStore, and ContextStore to build a ~100–250 token system prompt. Handles OpenAI (system role in messages array) and Anthropic (top-level system field) formats.
+- **Auto-experience-extraction** — Proxy automatically runs `ExperienceExtractor.extract_all()` every 50 LLM calls. Agent experiences grow without manual `intent-os experience extract`.
+- **Doctor feedback loop** — `intent-os doctor` now shows a "Was this diagnosis helpful?" hint with the exact CLI command to record feedback.
+- **7 new tests** — Context injector test suite covering identity, experiences, empty traits, cap limits, and OpenAI message formatting. 849 tests total, zero regressions.
+
+---
+
 ## v0.7.0 (2026-07-24)
 
 ### Agent Package (.agent) — Portable Agent Asset
