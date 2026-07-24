@@ -52,9 +52,9 @@ It is the missing `???` in this diagram:
     Claude RT       OpenAI RT        Ollama RT
 ```
 
-## The Six Components
+## The Seven Components
 
-An Execution Contract is not one thing. It is six. Each answers a question that any Agent — regardless of runtime — must answer before it can be trusted to act autonomously.
+An Execution Contract is not one thing. It is seven. Each answers a question that any Agent — regardless of runtime — must answer before it can be trusted to act autonomously.
 
 ### 1. Identity — "Who is this agent?"
 
@@ -158,17 +158,67 @@ policy:
 
 Identity tells you *who*. Governance tells you *whether they should have*. Policy, permission, and audit — the layer that transforms an Agent from a script anyone ran into a governed digital entity.
 
+### 7. Experience — "What did this agent learn from doing?"
+
+```
+experience_id: exp_a1b2c3d4e5
+agent_id: agent_a82f91c3
+type: failure_pattern
+observation: "Agent hallucinates revenue figures when SEC EDGAR API returns 503.
+              Verified against 10-K page 47 — model filled gap with plausible but
+              incorrect number."
+recommendation: "Always gate financial_analysis on EDGAR health check. If EDGAR
+                 unavailable, return PARTIAL_DATA_UNAVAILABLE not a guess."
+execution_ids: [exec_a82f91]
+confidence: 0.94
+domain: financial_research
+tags: [hallucination, api_failure, data_gap]
+validated: true
+```
+
+An Agent that never learns from its mistakes is just an expensive random number generator. Experience captures the patterns that emerge across executions — what went wrong, what worked, which tools are reliable, which models perform best for which tasks, which data sources fail under what conditions. It closes the loop: Execution data feeds Experience, Experience feeds better decisions, better decisions produce cleaner Execution data.
+
+**The 7 experience types:**
+
+| Icon | Type | What it captures |
+|------|------|-----------------|
+| `[-]` | `failure_pattern` | Recurring failure modes: hallucinations, tool misuse, API timeouts, in-context confusion |
+| `[+]` | `success_strategy` | Proven patterns: prompt structures, tool chains, fallback sequences that reliably succeed |
+| `[=]` | `tool_preference` | Which tools work best for which tasks, including reliability scores and latencies |
+| `[M]` | `model_performance` | Per-model metrics: accuracy on specific task types, cost efficiency, latency under load |
+| `[D]` | `data_source_reliability` | Which APIs, databases, and documents are reliable — and under what conditions |
+| `[E]` | `environment_constraint` | Environmental gotchas: OS-specific bugs, Python version incompatibilities, network quirks |
+| `[U]` | `user_feedback` | Explicit human correction: "that analysis was wrong," "use this source instead" |
+
+**CLI:**
+```bash
+intent-os experience record --agent <id> --type failure_pattern \
+    --observation "Agent hallucinates when API returns 503" \
+    --recommendation "Add health check gate" --execution exec_a82f91 \
+    --confidence 0.94 --domain financial_research --tag hallucination
+
+intent-os experience list --agent <id> --type success_strategy
+intent-os experience get exp_a1b2c3d4e5
+intent-os experience extract --agent <id>          # auto-summarize all types
+intent-os experience query "EDGAR API failure"      # keyword search
+intent-os experience validate exp_a1b2c3d4e5 --valid --success
+```
+
+**Why experience matters for the Execution Contract:**
+
+Without Experience, the contract is static — a snapshot of one execution. With Experience, the contract becomes self-improving. Patterns discovered in Layer 7 flow back to Layer 1 (Context — "add this constraint"), Layer 2 (Identity — "this agent needs this capability"), Layer 4 (Verification — "add this claim to the evidence check"), and Layer 5 (Governance — "deny this tool under these conditions"). Experience is the feedback loop that turns a flight recorder into a learning engine.
+
 ---
 
 ## Why Flight Recorder First?
 
 You cannot build a contract that no one can see being executed.
 
-Before you can standardize an Agent's behavior, you must observe it. Before you can govern it, you must record it. Before you can port it, you must know what it actually did. The Flight Recorder — `intent-os proxy start` — is the data engine for the Execution Contract. Every model call, every tool use, every cost accrual captured today becomes the empirical foundation for the standard tomorrow.
+Before you can standardize an Agent's behavior, you must observe it. Before you can govern it, you must record it. Before you can port it, you must know what it actually did. Before you can learn from it, you must capture what worked and what failed. The Flight Recorder — `intent-os proxy start` — is the data engine for the Execution Contract. Every model call, every tool use, every cost accrual captured today becomes the empirical foundation for the standard tomorrow. Every pattern that emerges from that data becomes the Experience that makes tomorrow's Agent smarter than today's.
 
 ```
 Phase 1: Observe     → Flight Recorder captures Execution Data
-Phase 2: Standardize → Freeze the Execution Contract (Identity + Manifest + Context + Evidence + Record)
+Phase 2: Standardize → Freeze the Execution Contract (Identity + Manifest + Context + Evidence + Record + Experience)
 Phase 3: Portable    → Same Agent, any Runtime
 Phase 4: Economy     → Agent becomes tradeable asset
 ```
@@ -179,7 +229,7 @@ The strategy is not "build a monitoring tool and hope to grow." It is "use the e
 
 ## The Long Bet
 
-When a developer creates a new AI capability, their first thought should be to write an **Intent OS Manifest** — just as naturally as writing an OpenAPI spec for an API. When an enterprise deploys an Agent, they should demand an **Intent OS Execution Record** — just as naturally as demanding an audit trail from a financial system. When an Agent moves from Claude to GPT to an on-premise model, it should carry its **Intent OS Execution Contract** — its identity, its capabilities, its evidence, its governance — intact.
+When a developer creates a new AI capability, their first thought should be to write an **Intent OS Manifest** — just as naturally as writing an OpenAPI spec for an API. When an enterprise deploys an Agent, they should demand an **Intent OS Execution Record** — just as naturally as demanding an audit trail from a financial system. When an Agent moves from Claude to GPT to an on-premise model, it should carry its **Intent OS Execution Contract** — its identity, its capabilities, its evidence, its governance, and its hard-won experience — intact.
 
 This is not a monitoring tool. This is not a debugger. This is the missing infrastructure layer between AI capabilities and the runtimes that execute them.
 

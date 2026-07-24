@@ -149,7 +149,7 @@ Intent OS is not just a tool. It is the first implementation of a **portable exe
     Claude RT       OpenAI RT        Ollama RT
 ```
 
-The six layers of Intent OS — Identity, Execution, Verification, Governance, Interoperability — are the components of this contract. Together they answer the questions any organization must ask of an autonomous system: who was it, what did it do, what evidence did it have, and who authorized it.
+The seven layers of Intent OS — Context, Identity, Execution, Verification, Governance, Interoperability, Experience — are the components of this contract. Together they answer the questions any organization must ask of an autonomous system: who was it, what was it supposed to do, what did it do, what evidence did it have, what did it learn, and who authorized it.
 
 This is **Agent Accountability infrastructure.** The equivalent for autonomous AI of what audit trails are to finance and what version control is to software.
 

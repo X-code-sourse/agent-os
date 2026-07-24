@@ -31,6 +31,7 @@ import commands.scan
 import commands.agent
 import commands.context
 import commands.evidence
+import commands.experience
 import commands.prune
 
 # All cmd_* functions are imported from command modules via the registry pattern below
@@ -59,6 +60,7 @@ CMD_MAP = {
     "agent": commands.agent.cmd_agent,
     "context": commands.context.cmd_context,
     "evidence": commands.evidence.cmd_evidence,
+    "experience": commands.experience.cmd_experience,
     "prune": commands.prune.cmd_prune,
 }
 
@@ -69,7 +71,7 @@ def build_parser() -> argparse.ArgumentParser:
         description="Intent OS Reference Runtime - Open AI Capability Interoperability",
         epilog="Phase 0 - Prove that one Manifest can run on multiple runtimes.",
     )
-    parser.add_argument("--version", action="version", version="intent-os 0.5.0")
+    parser.add_argument("--version", action="version", version="intent-os 0.5.1")
 
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
@@ -442,6 +444,67 @@ def build_parser() -> argparse.ArgumentParser:
     evi_unverified = evi_sub.add_parser("unverified", help="List unverified evidence")
     evi_unverified.add_argument("--limit", type=int, default=50, help="Max results")
     evi_unverified.set_defaults(func=CMD_MAP["evidence"])
+
+    # experience
+    exp_parser = subparsers.add_parser("experience",
+        help="Manage agent learned experiences — patterns, strategies, and feedback")
+    exp_sub = exp_parser.add_subparsers(dest="experience_action", help="Experience actions")
+
+    # experience record
+    exp_record = exp_sub.add_parser("record", help="Record a new experience entry")
+    exp_record.add_argument("--agent", required=True, help="Agent ID")
+    exp_record.add_argument("--type", required=True, dest="type",
+                            choices=["failure_pattern", "success_strategy", "tool_preference",
+                                     "model_performance", "data_source_reliability",
+                                     "environment_constraint", "user_feedback"],
+                            help="Experience type")
+    exp_record.add_argument("--observation", required=True, help="What was observed")
+    exp_record.add_argument("--recommendation", default=None, help="What should be done differently")
+    exp_record.add_argument("--execution", action="append", default=None,
+                            help="Related execution/trace IDs (repeatable)")
+    exp_record.add_argument("--confidence", type=float, default=None, help="Confidence 0.0-1.0")
+    exp_record.add_argument("--domain", default=None, help="Domain (e.g. trading, research)")
+    exp_record.add_argument("--tag", action="append", default=None,
+                            help="Tags (repeatable)")
+    exp_record.set_defaults(func=CMD_MAP["experience"])
+
+    # experience list
+    exp_list = exp_sub.add_parser("list", help="List experiences with optional filters")
+    exp_list.add_argument("--agent", default=None, help="Filter by agent ID")
+    exp_list.add_argument("--type", default=None, dest="type",
+                          choices=["failure_pattern", "success_strategy", "tool_preference",
+                                   "model_performance", "data_source_reliability",
+                                   "environment_constraint", "user_feedback"],
+                          help="Filter by experience type")
+    exp_list.add_argument("--domain", default=None, help="Filter by domain")
+    exp_list.add_argument("--limit", type=int, default=50, help="Max results (default: 50)")
+    exp_list.set_defaults(func=CMD_MAP["experience"])
+
+    # experience get
+    exp_get = exp_sub.add_parser("get", help="Show full detail for a single experience entry")
+    exp_get.add_argument("experience_id", help="Experience ID")
+    exp_get.set_defaults(func=CMD_MAP["experience"])
+
+    # experience extract
+    exp_extract = exp_sub.add_parser("extract", help="Extract experiences for an agent (or all)")
+    exp_extract.add_argument("--agent", default=None, help="Agent ID (omit to extract all)")
+    exp_extract.set_defaults(func=CMD_MAP["experience"])
+
+    # experience query
+    exp_query = exp_sub.add_parser("query", help="Keyword-match query across experiences")
+    exp_query.add_argument("goal", help="Goal text or keywords to search for")
+    exp_query.add_argument("--agent", default=None, help="Filter by agent ID")
+    exp_query.add_argument("--limit", type=int, default=10, help="Max results (default: 10)")
+    exp_query.set_defaults(func=CMD_MAP["experience"])
+
+    # experience validate
+    exp_validate = exp_sub.add_parser("validate", help="Mark an experience as validated and/or successful")
+    exp_validate.add_argument("experience_id", help="Experience ID")
+    exp_validate.add_argument("--valid", action="store_true",
+                              help="Mark experience as validated")
+    exp_validate.add_argument("--success", action="store_true",
+                              help="Mark experience as successful")
+    exp_validate.set_defaults(func=CMD_MAP["experience"])
 
     # registry — extended
     reg_parser_2 = subparsers.add_parser("registry",

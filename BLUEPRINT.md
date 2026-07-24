@@ -3,7 +3,7 @@
 > **从 Flight Recorder 到 Agent Execution Infrastructure 的完整路线图**
 >
 > 最后更新：2026-07-23
-> 对应代码：v0.4.3 (731 tests)
+> 对应代码：v0.5.0 (731 tests)
 
 ---
 
@@ -15,11 +15,11 @@
 
 ---
 
-## 六层架构 — 全部服务于一个目的：Agent Accountability
+## 七层架构 — 全部服务于一个目的：Agent Accountability
 
 AI agents are crossing a line. They used to answer questions. Now they modify code, call APIs, write files, spend money — all on their own. But they have no identity card, no audit trail, no permission boundary, no way to prove their decisions were justified.
 
-The six layers of Intent OS are not arbitrary. Each one answers a specific accountability question:
+The seven layers of Intent OS are not arbitrary. Each one answers a specific accountability question:
 
 ```
 Layer 1 — Context        "What was the agent supposed to do?"
@@ -28,6 +28,7 @@ Layer 3 — Execution      "What did it actually do?"
 Layer 4 — Verification   "Can we prove its claims are true?"
 Layer 5 — Governance     "Was it allowed to do that?"
 Layer 6 — Interoperability "Can its capabilities be discovered, reused, and trusted by others?"
+Layer 7 — Experience     "What did this agent learn from doing?"
 ```
 
 Together, they form an **Agent Accountability System** — the equivalent for autonomous AI of what audit trails are to finance and what version control is to software.
@@ -71,13 +72,20 @@ Layer 6 ┌───────────────────────
         │  "Can others discover and trust    │
         │   its capabilities?"              │
         └───────────────────────────────────┘
+                                │
+                                │
+Layer 7 ┌───────────────────────────────────┐
+        │       Experience Layer            │
+        │  "What did this agent learn       │
+        │   from doing?"                    │
+        └───────────────────────────────────┘
 ```
 
-**依赖关系：下层是上层的数据来源。没有 Execution Record，就无法验证、无法治理、无法互操作。**
+**依赖关系：下层是上层的数据来源。没有 Execution Record，就无法验证、无法治理、无法互操作。Experience 是所有层的反馈回路——从失败中提取模式，从成功中提炼策略，让 Agent 越跑越聪明。**
 
 ---
 
-## 现状映射：v0.4.3 已有什么
+## 现状映射：v0.5.0 已有什么
 
 | 层 | 已有模块 | 状态 | 差距 |
 |----|---------|------|------|
@@ -87,6 +95,7 @@ Layer 6 ┌───────────────────────
 | **Verification** | `evidence_store.py`, `commands/evidence.py` | ✅ Phase 3 骨架 | 5 CLI 命令，FK 约束，source_type 校验 |
 | **Governance** | `security.py`, `guard.py`, `commands/{scan,audit,security}.py` | ⚡ Phase 0 | 同步评估。Phase 3 升级在 BLUEPRINT 3.2 规划 |
 | **Interop** | `models.py`(Manifest), `parser.py`, `adapters/`, `registry.py`, `federated.py` | ⚡ Phase 3 市场 | Manifest 冻结 + Marketplace publish/discover/show/install/rate |
+| **Experience** | `commands/experience.py` | ✅ NEW Phase 2 | 7 种经验类型，record/list/get/extract/query/validate |
 
 ### 关键数据流（当前）
 
@@ -111,6 +120,19 @@ CLI Layer:
     cost       ← 聚合 LlmCall events → 费用报告
     scan       ← 扫描 events + Guard 分类 → 安全报告
     audit      ← 聚合 records + security events → 合规报告
+    experience ← 记录 Agent 失败/成功/偏好 → 经验库 (experiences.json)
+
+  Experience Store (experiences.json):
+    ┌──────────────────────────────────────────┐
+    │ 7 种经验类型:                             │
+    │   [-] failure_pattern     失败模式        │
+    │   [+] success_strategy    成功策略        │
+    │   [=] tool_preference     工具偏好        │
+    │   [M] model_performance   模型表现        │
+    │   [D] data_source         数据源可靠性     │
+    │   [E] environment         环境约束        │
+    │   [U] user_feedback       用户反馈        │
+    └──────────────────────────────────────────┘
 ```
 
 ---
@@ -497,13 +519,25 @@ Agent A (Research)
               ┌────────▼─┐ ┌──▼────┐ ┌▼─────────┐
               │Verification│ │Govern.│ │Interop.   │
               │(evidence)  │ │(policy)│ │(manifest) │
-              └────────────┘ └───────┘ └───────────┘
+              └─────┬──────┘ └───┬───┘ └─────┬─────┘
+                    │            │            │
+                    └────────────┼────────────┘
+                                 │ feedback loop
+                    ┌────────────▼────────────┐
+                    │    Experience Layer      │
+                    │    (patterns, strategies)│  ← 学习引擎
+                    └─────────────────────────┘
+                        [-] failure   [+] success
+                        [=] tool      [M] model
+                        [D] data      [E] env
+                        [U] feedback
 ```
 
 **关键约束：**
 1. Execution Layer 必须先做强——没有足够多、足够干净的 Execution Record，上面的 Verification 和 Governance 没有数据可用
 2. Identity Layer 必须先做强——没有 Agent ID，无法关联 Execution → Agent → Team → Policy
 3. Context 是横切层——它不依赖 Execution，但 Execution 引用它
+4. Experience 是反馈层——它消费所有下层数据，提取模式后反哺给 Agent 的下一次执行
 
 ---
 
@@ -552,6 +586,19 @@ Agent A (Research)
 │  │ usage_count      │     │ agent_id (FK)        │         │
 │  └──────────────────┘     │ ...                  │         │
 │                           └──────────────────────┘         │
+│                                                             │
+│  experiences (JSON file)                                    │
+│  ┌──────────────────────────────────────────┐              │
+│  │ experience_id (PK)                      │              │
+│  │ agent_id (FK→agent)                     │              │
+│  │ type (7 kinds)                          │              │
+│  │ observation                             │              │
+│  │ recommendation                          │              │
+│  │ execution_ids (JSON)                    │              │
+│  │ confidence                              │              │
+│  │ domain / tags (JSON)                    │              │
+│  │ validated / successful                  │              │
+│  └──────────────────────────────────────────┘              │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -614,7 +661,7 @@ intent-os proxy start
 
 ## 附录：当前代码归档
 
-### 六层 → 代码模块映射
+### 七层 → 代码模块映射
 
 | 层 | 代码模块 | CLIs |
 |----|---------|------|
@@ -624,8 +671,9 @@ intent-os proxy start
 | **Verification** | `core/evidence_store.py` | `intent-os evidence *` |
 | **Governance** | `core/security.py`, `proxy/guard.py` | `intent-os {security,scan,audit} *` |
 | **Interop** | `core/parser.py`, `core/registry.py`, `core/federated.py`, `adapters/*` | `intent-os {run,validate,compare,registry} *` |
+| **Experience** | `commands/experience.py` | `intent-os experience {record,list,get,extract,query,validate}` |
 
-### 26 个 Python 模块 × 当前成熟度
+### 27 个 Python 模块 × 当前成熟度
 
 | 模块 | 行数 | 成熟度 | 说明 |
 |------|------|--------|------|
@@ -646,6 +694,7 @@ intent-os proxy start
 | `agent_store.py` | ~346 | ✅ Phase 2 | Agent + Team CRUD + Schema migration |
 | `commands/analytics.py` | ~260 | ✅ | 10 subcommands (含 agent/compare/anomaly) |
 | `commands/agent.py` | ~460 | ✅ | 12 subcommands (含 status/capability/team) |
+| `commands/experience.py` | ~210 | ✅ NEW | 7 种经验类型 record/list/get/extract/query/validate |
 | `context_store.py` | ~239 | ✅ NEW | Execution Context CRUD |
 | `evidence_store.py` | ~236 | ✅ NEW | Evidence CRUD + FK + validation |
 | `search.py` | ~323 | ✅ | TF-IDF 搜索引擎 |

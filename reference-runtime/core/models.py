@@ -451,6 +451,47 @@ class Evidence:
 
 
 # ──────────────────────────────────────────────
+# Evolution Layer — Experience (BluePrint Layer 7)
+# ──────────────────────────────────────────────
+
+_VALID_EXPERIENCE_TYPES = frozenset({
+    "failure_pattern",
+    "success_strategy",
+    "tool_preference",
+    "model_performance",
+    "data_source_reliability",
+    "environment_constraint",
+    "user_feedback",
+})
+
+
+@dataclass
+class Experience:
+    """Learned experience from past executions (BluePrint Layer 7 — Evolution).
+
+    Each Experience captures a pattern, strategy, or insight discovered
+    during Agent execution. Experiences feed back into the Evolution Loop
+    to improve future decision-making.
+
+    Linked to one or more Executions via ``source_executions``.
+    """
+    experience_id: str                                    # "exp_<12hex>"
+    agent_id: str
+    source_executions: list[str] = field(default_factory=list)
+    type: str = ""                                        # failure_pattern|success_strategy|tool_preference|model_performance|data_source_reliability|environment_constraint|user_feedback
+    observation: str = ""
+    recommendation: str = ""
+    confidence: float = 0.0
+    domain: str = ""
+    tags: list[str] = field(default_factory=list)
+    created_at: str = ""
+    last_validated_at: str | None = None
+    usage_count: int = 0
+    success_rate_when_applied: float = 0.0
+    expires_at: str | None = None
+
+
+# ──────────────────────────────────────────────
 # Identity Layer — Team (BluePrint Layer 2)
 # ──────────────────────────────────────────────
 
