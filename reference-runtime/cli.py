@@ -92,6 +92,8 @@ def build_parser() -> argparse.ArgumentParser:
                             help="Input parameter as key=value (can be repeated, e.g. -p target_lang=zh)")
     run_parser.add_argument("--output", "-o", default=None, help="Save execution record to file")
     run_parser.add_argument("--save", "-s", default=None, help="Save execution record path")
+    run_parser.add_argument("--context", default=None,
+                            help="Execution context ID for this run (use: intent-os context create)")
     run_parser.set_defaults(func=CMD_MAP["run"])
 
     # compare
@@ -263,6 +265,8 @@ def build_parser() -> argparse.ArgumentParser:
                     help="Enable Tool Call Guard (inspect and classify tool call safety)")
     ps.add_argument("--agent", default=None,
                     help="Agent ID to associate with captured traces (use: intent-os agent create)")
+    ps.add_argument("--context", default=None,
+                    help="Execution context ID to associate with captured traces (use: intent-os context create)")
     ps.set_defaults(func=CMD_MAP["proxy"])
     pst = proxy_sub.add_parser("status", help="Check if the proxy is running")
     pst.add_argument("--port", type=int, default=8377, help="Port (default: 8377)")
@@ -407,6 +411,9 @@ def build_parser() -> argparse.ArgumentParser:
     ctx_inspect = ctx_sub.add_parser("inspect", help="Inspect a context and its assignments")
     ctx_inspect.add_argument("context_id", help="Context ID")
     ctx_inspect.set_defaults(func=CMD_MAP["context"])
+    ctx_history = ctx_sub.add_parser("history", help="Show version history for a context")
+    ctx_history.add_argument("context_id", help="Context ID")
+    ctx_history.set_defaults(func=CMD_MAP["context"])
     ctx_assign = ctx_sub.add_parser("assign", help="Assign an agent to a context")
     ctx_assign.add_argument("context_id", help="Context ID")
     ctx_assign.add_argument("--agent", required=True, help="Agent ID to assign")
@@ -417,6 +424,11 @@ def build_parser() -> argparse.ArgumentParser:
     ctx_delete = ctx_sub.add_parser("delete", help="Delete a context")
     ctx_delete.add_argument("context_id", help="Context ID")
     ctx_delete.set_defaults(func=CMD_MAP["context"])
+    ctx_diff = ctx_sub.add_parser("diff", help="Diff two contexts or two versions of the same context")
+    ctx_diff.add_argument("context_id", help="Primary context ID")
+    ctx_diff.add_argument("context_id_b", nargs="?", default=None,
+                          help="Secondary context ID (omit to compare current vs previous version)")
+    ctx_diff.set_defaults(func=CMD_MAP["context"])
 
     # evidence
     evi_parser = subparsers.add_parser("evidence",

@@ -128,11 +128,13 @@ class AgentTracer:
         endpoint: str = "",
         error_message: str | None = None,
         agent_id: str | None = None,
+        context_id: str | None = None,
     ) -> str:
         """Record one LLM API call as an Event Store event.
 
         Args:
             agent_id: Optional registered agent ID to associate with this call.
+            context_id: Optional execution context ID to associate with this call.
 
         Returns the trace_id for later inspection.
         """
@@ -171,6 +173,8 @@ class AgentTracer:
         }
         if agent_id:
             event.payload["agent_id"] = agent_id
+        if context_id:
+            event.payload["context_id"] = context_id
         if error_message:
             event.payload["error"] = error_message
 

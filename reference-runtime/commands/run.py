@@ -188,7 +188,8 @@ def cmd_run(args: argparse.Namespace) -> None:
     display_record(record, args.output)
 
     try:
-        save_to_event_store(record)
+        context_id = getattr(args, "context", None)
+        save_to_event_store(record, context_id=context_id)
     except Exception:
         pass  # Non-critical — execution results already displayed
 

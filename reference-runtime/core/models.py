@@ -413,6 +413,7 @@ class ExecutionContext:
     """
     context_id: str
     name: str
+    version: int = 1
     goal: str = ""
     constraints: list[str] = field(default_factory=list)
     task_scope: str = ""

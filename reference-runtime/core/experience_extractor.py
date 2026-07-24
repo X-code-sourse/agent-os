@@ -72,6 +72,7 @@ class Experience:
     confidence: float = 0.5
     occurrence_count: int = 0
     source_data: dict[str, Any] = field(default_factory=dict)
+    tags: list[str] = field(default_factory=list)
     created_at: str = ""
 
     # Canonical set of experience types
@@ -163,6 +164,7 @@ CREATE TABLE IF NOT EXISTS experiences (
     confidence REAL NOT NULL DEFAULT 0.5,
     occurrence_count INTEGER NOT NULL DEFAULT 0,
     source_data TEXT NOT NULL DEFAULT '{}',
+    tags TEXT NOT NULL DEFAULT '[]',
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 """
@@ -199,6 +201,13 @@ class ExperienceStore:
     def _init_db(self) -> None:
         conn = self._get_conn()
         conn.execute(CREATE_EXPERIENCES_TABLE)
+        # Migration: add tags column if upgrading from an older schema
+        try:
+            conn.execute(
+                "ALTER TABLE experiences ADD COLUMN tags TEXT NOT NULL DEFAULT '[]'"
+            )
+        except sqlite3.OperationalError:
+            pass  # Column already exists
         for idx in CREATE_EXP_INDEXES:
             try:
                 conn.execute(idx)
@@ -221,8 +230,8 @@ class ExperienceStore:
             conn.execute(
                 """INSERT OR REPLACE INTO experiences
                    (experience_id, agent_id, type, observation, recommendation,
-                    confidence, occurrence_count, source_data, created_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    confidence, occurrence_count, source_data, tags, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     experience.experience_id,
                     experience.agent_id,
@@ -232,6 +241,7 @@ class ExperienceStore:
                     experience.confidence,
                     experience.occurrence_count,
                     _safe_json_dumps(experience.source_data),
+                    _safe_json_dumps(experience.tags),
                     experience.created_at or _now_iso(),
                 ),
             )
@@ -315,6 +325,19 @@ class ExperienceStore:
         finally:
             conn.close()
 
+    def update_tags(self, experience_id: str, tags: list[str]) -> bool:
+        """Replace the tags for an experience. Returns True if updated."""
+        conn = self._get_conn()
+        try:
+            cursor = conn.execute(
+                "UPDATE experiences SET tags = ? WHERE experience_id = ?",
+                (_safe_json_dumps(tags), experience_id),
+            )
+            conn.commit()
+            return cursor.rowcount > 0
+        finally:
+            conn.close()
+
     def count(self) -> int:
         """Total number of stored Experiences."""
         conn = self._get_conn()
@@ -350,6 +373,11 @@ def _row_to_experience(row: dict[str, Any]) -> Experience:
         source_data = _json.loads(source_data_str)
     except (_json.JSONDecodeError, TypeError):
         source_data = {}
+    tags_str = row.get("tags", "[]") or "[]"
+    try:
+        tags = _json.loads(tags_str)
+    except (_json.JSONDecodeError, TypeError):
+        tags = []
     return Experience(
         experience_id=row["experience_id"],
         agent_id=row["agent_id"],
@@ -359,6 +387,7 @@ def _row_to_experience(row: dict[str, Any]) -> Experience:
         confidence=row["confidence"] or 0.5,
         occurrence_count=row["occurrence_count"] or 0,
         source_data=source_data,
+        tags=list(tags) if isinstance(tags, (list, tuple)) else [],
         created_at=row["created_at"] or "",
     )
 
@@ -882,23 +911,42 @@ class ExperienceExtractor:
 
     def extract_all(
         self, agent_id: str, since_days: int = 30
-    ) -> dict[str, int]:
+    ) -> dict[str, Any]:
         """Run all four extractors and persist new Experiences.
+
+        Before extracting, queries ``execution_records`` for the
+        context(s) this agent's executions ran under.  After saving
+        each new experience, its tags are updated to include the
+        context_id(s) so the experience stays linked to its originating
+        context.
 
         Deduplication: an Experience is skipped if one with the same
         ``agent_id`` and ``observation`` text already exists in the
         Experience Store.
 
-        Returns a dict mapping each experience type to the count of
-        *new* experiences that were saved::
+        Returns a dict with per-type counts and context linkage info::
 
             {
               "failure_patterns": 3,
               "success_strategies": 1,
               "tool_preferences": 2,
               "data_source_reliability": 0,
+              "context_ids": ["ctx_abc123", "ctx_def456"],
+              "context_linked": 5,
             }
         """
+        # ── Determine which context(s) this agent's executions ran under ──
+        conn = self._conn()
+        context_rows = conn.execute(
+            """SELECT DISTINCT context_id
+               FROM execution_records
+               WHERE agent_id = ?
+                 AND context_id IS NOT NULL
+                 AND context_id != ''""",
+            (agent_id,),
+        ).fetchall()
+        context_ids = [r["context_id"] for r in context_rows]
+
         all_experiences: list[Experience] = []
 
         # Collect from each extractor
@@ -917,17 +965,22 @@ class ExperienceExtractor:
 
         # Deduplicate and persist
         counts: dict[str, int] = defaultdict(int)
+        key_map = {
+            "failure_pattern": "failure_patterns",
+            "success_strategy": "success_strategies",
+            "tool_preference": "tool_preferences",
+            "data_source_reliability": "data_source_reliability",
+        }
+
         for exp in all_experiences:
             if self._is_duplicate(agent_id, exp.observation):
                 continue
+            # Tag the experience with context_id(s) before saving
+            if context_ids:
+                tag_prefixes = {f"context:{cid}" for cid in context_ids}
+                existing_tags = set(exp.tags)
+                exp.tags = sorted(existing_tags | tag_prefixes)
             self._exp_store.save(exp)
-            # Map type to counter key
-            key_map = {
-                "failure_pattern": "failure_patterns",
-                "success_strategy": "success_strategies",
-                "tool_preference": "tool_preferences",
-                "data_source_reliability": "data_source_reliability",
-            }
             counts[key_map.get(exp.type, exp.type)] += 1
 
         return {
@@ -935,4 +988,32 @@ class ExperienceExtractor:
             "success_strategies": counts.get("success_strategies", 0),
             "tool_preferences": counts.get("tool_preferences", 0),
             "data_source_reliability": counts.get("data_source_reliability", 0),
+            "context_ids": context_ids,
+            "context_linked": sum(counts.values()) if context_ids else 0,
         }
+
+    # ────────────────────────────────────────────────────────────────
+    # Context-linked experience queries
+    # ────────────────────────────────────────────────────────────────
+
+    def get_context_experiences(
+        self, context_id: str, limit: int = 50
+    ) -> list[Experience]:
+        """Return experiences linked to a specific execution context.
+
+        Experiences are linked to a context when their ``tags`` list
+        contains ``"context:<context_id>"`` — this tag is added
+        automatically by :meth:`extract_all`.
+        """
+        conn = self._exp_store._get_conn()
+        try:
+            cursor = conn.execute(
+                """SELECT * FROM experiences
+                   WHERE tags LIKE ?
+                   ORDER BY created_at DESC
+                   LIMIT ?""",
+                (f"%context:{context_id}%", limit),
+            )
+            return [_row_to_experience(dict(r)) for r in cursor.fetchall()]
+        finally:
+            conn.close()

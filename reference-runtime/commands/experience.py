@@ -258,14 +258,40 @@ def _cmd_get(args: Any) -> None:
 # extract
 # ---------------------------------------------------------------------------
 def _cmd_extract(args: Any) -> None:
-    """Extract experiences for an agent, or auto-extract for all agents if omitted."""
-    agent = getattr(args, "agent", None)
-    experiences = _load()
+    """Extract experiences for an agent, or auto-extract for all agents if omitted.
 
+    When ``--agent`` is provided, runs the full ExperienceExtractor pipeline
+    against the Event Store and persists new Experiences to the Experience
+    Store.  The results include context linkage information — which execution
+    context(s) the new experiences are associated with.
+    """
+    agent = getattr(args, "agent", None)
+
+    # ── Run the real extractor when --agent is specified ──
+    extractor_result: dict[str, Any] | None = None
+    if agent:
+        try:
+            from pathlib import Path as _Path
+            from core.event_store import EventStore
+            from core.experience_extractor import (
+                ExperienceExtractor, ExperienceStore as ExtractorExperienceStore,
+            )
+
+            event_store = EventStore(
+                str(_Path.home() / ".intent-os" / "intent_os_store.db")
+            )
+            exp_store = ExtractorExperienceStore()
+            extractor = ExperienceExtractor(event_store, exp_store)
+            extractor_result = extractor.extract_all(agent)
+        except Exception:
+            extractor_result = None  # Gracefully fall back to JSON-only report
+
+    # ── JSON-file based summary (always shown) ──
+    experiences = _load()
     if agent:
         experiences = [e for e in experiences if e.get("agent_id") == agent]
 
-    if not experiences:
+    if not experiences and extractor_result is None:
         print("  No experiences to extract.")
         print()
         print("  Record experiences first:")
@@ -273,39 +299,80 @@ def _cmd_extract(args: Any) -> None:
         print()
         return
 
-    # Collect per-type summaries
+    # Collect per-type summaries from the JSON store
     by_type: dict[str, list[dict[str, Any]]] = {}
     for e in experiences:
         t = e.get("type", "unknown")
         by_type.setdefault(t, []).append(e)
 
     agent_label = f"agent '{agent}'" if agent else "all agents"
-    total = len(experiences)
-    validated = sum(1 for e in experiences if e.get("validated"))
-    successful = sum(1 for e in experiences if e.get("successful"))
 
-    print()
-    print(f"  Experience Extraction Report ({agent_label})")
-    print(f"  {'─'*52}")
-    print(f"  Total entries:      {total}")
-    print(f"  Validated:          {validated}/{total}")
-    print(f"  Marked successful:  {successful}/{total}")
-    print()
-
-    if by_type:
-        print(f"  Breakdown by type:")
-        for t, entries in sorted(by_type.items()):
-            icon = _TYPE_ICONS.get(t, "?")
-            print(f"    {icon} {t:<28} {len(entries):>4} entries")
+    # ── Show extractor results if available ──
+    if extractor_result:
+        total_new = sum(
+            extractor_result.get(k, 0)
+            for k in (
+                "failure_patterns", "success_strategies",
+                "tool_preferences", "data_source_reliability",
+            )
+        )
+        print()
+        print(f"  Experience Extraction Report ({agent_label})")
+        print(f"  {'─'*52}")
+        print(f"  New experiences extracted: {total_new}")
+        for key, label in [
+            ("failure_patterns", "Failure patterns"),
+            ("success_strategies", "Success strategies"),
+            ("tool_preferences", "Tool preferences"),
+            ("data_source_reliability", "Data source reliability"),
+        ]:
+            count = extractor_result.get(key, 0)
+            icon = _TYPE_ICONS.get(key.rstrip("s"), "?")
+            print(f"    {icon} {label:<28} {count:>4}")
         print()
 
-    # Print top observations
-    print(f"  Recent observations:")
-    for e in reversed(experiences[-10:]):
-        icon = _TYPE_ICONS.get(e.get("type", ""), "?")
-        obs = (e.get("observation") or "")[:100]
-        print(f"    {icon} [{e['experience_id']}] {obs}")
-    print()
+        # ── Context linkage ──
+        context_ids = extractor_result.get("context_ids") or []
+        context_linked = extractor_result.get("context_linked", 0)
+        if context_ids:
+            print(f"  Linked to context(s):")
+            for cid in context_ids:
+                print(f"    - {cid}")
+            print(f"  ({context_linked} experience(s) tagged with context IDs)")
+        else:
+            print(f"  Linked to context(s): (none — no context_id found in execution records)")
+        print()
+
+    # ── JSON-file summary ──
+    if experiences:
+        total = len(experiences)
+        validated = sum(1 for e in experiences if e.get("validated"))
+        successful = sum(1 for e in experiences if e.get("successful"))
+
+        if not extractor_result:
+            print()
+            print(f"  Experience Extraction Report ({agent_label})")
+            print(f"  {'─'*52}")
+
+        print(f"  Stored entries:      {total}")
+        print(f"  Validated:           {validated}/{total}")
+        print(f"  Marked successful:   {successful}/{total}")
+        print()
+
+        if by_type:
+            print(f"  Breakdown by type:")
+            for t, entries in sorted(by_type.items()):
+                icon = _TYPE_ICONS.get(t, "?")
+                print(f"    {icon} {t:<28} {len(entries):>4} entries")
+            print()
+
+        # Print top observations
+        print(f"  Recent observations:")
+        for e in reversed(experiences[-10:]):
+            icon = _TYPE_ICONS.get(e.get("type", ""), "?")
+            obs = (e.get("observation") or "")[:100]
+            print(f"    {icon} [{e['experience_id']}] {obs}")
+        print()
 
 
 # ---------------------------------------------------------------------------

@@ -434,6 +434,72 @@ class ExperienceStore:
         finally:
             self._close_conn(conn)
 
+    def get_by_context(
+        self,
+        context_id: str,
+        limit: int = 50,
+        event_store: Any | None = None,
+    ) -> list[dict[str, Any]]:
+        """Return experiences linked to a specific execution context.
+
+        Looks up all ``trace_id`` values from ``execution_records``
+        that belong to *context_id*, then returns experiences whose
+        ``source_executions`` JSON array contains at least one of
+        those trace IDs.
+
+        Args:
+            context_id: The execution context to query.
+            limit: Maximum number of experiences to return.
+            event_store: An :class:`EventStore` instance used to query
+                ``execution_records``.  If ``None``, the method returns
+                an empty list gracefully.
+
+        Returns:
+            List of experience dicts ordered by ``created_at``
+            descending.
+        """
+        if event_store is None:
+            return []
+
+        # ── Collect trace_ids belonging to this context ──
+        try:
+            ev_conn = event_store.get_connection()
+        except AttributeError:
+            return []
+
+        trace_rows = ev_conn.execute(
+            """SELECT DISTINCT trace_id
+               FROM execution_records
+               WHERE context_id = ?
+                 AND trace_id IS NOT NULL""",
+            (context_id,),
+        ).fetchall()
+
+        trace_ids = [r["trace_id"] for r in trace_rows]
+        if not trace_ids:
+            return []
+
+        # ── Find experiences whose source_executions overlap ──
+        conn = self._get_conn()
+        try:
+            cursor = conn.execute(
+                "SELECT * FROM experiences ORDER BY created_at DESC"
+            )
+            all_rows = [self._row_to_dict(row) for row in cursor.fetchall()]
+        finally:
+            self._close_conn(conn)
+
+        matched: list[dict[str, Any]] = []
+        trace_set = set(trace_ids)
+        for exp in all_rows:
+            src_execs = exp.get("source_executions") or []
+            if isinstance(src_execs, list) and trace_set.intersection(src_execs):
+                matched.append(exp)
+                if len(matched) >= limit:
+                    break
+
+        return matched
+
     def update_validation(self, experience_id: str) -> bool:
         """Update the ``last_validated_at`` timestamp for an experience.
 

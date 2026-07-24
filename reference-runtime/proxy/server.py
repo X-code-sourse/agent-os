@@ -147,10 +147,11 @@ def _forward_stream_setup(
 class ProxyHandler(BaseHTTPRequestHandler):
     """HTTP request handler that proxies LLM API calls and records them."""
 
-    # Class-level tracer, guard, and agent_id shared across all requests
+    # Class-level tracer, guard, agent_id, and context_id shared across all requests
     _tracer: AgentTracer | None = None
     _guard: ToolCallGuard | None = None
     _agent_id: str | None = None
+    _context_id: str | None = None
 
     @classmethod
     def _get_tracer(cls) -> AgentTracer:
@@ -172,6 +173,11 @@ class ProxyHandler(BaseHTTPRequestHandler):
     def set_agent_id(cls, agent_id: str | None) -> None:
         """Set the agent ID to associate with all captured traces."""
         cls._agent_id = agent_id
+
+    @classmethod
+    def set_context_id(cls, context_id: str | None) -> None:
+        """Set the execution context ID to associate with all captured traces."""
+        cls._context_id = context_id
 
     def do_POST(self) -> None:
         """Handle POST requests — proxy to OpenAI or Anthropic."""
@@ -274,6 +280,7 @@ class ProxyHandler(BaseHTTPRequestHandler):
                 source_agent=agent,
                 endpoint=path,
                 agent_id=self._agent_id,
+                context_id=self._context_id,
             )
             return
 
@@ -318,6 +325,7 @@ class ProxyHandler(BaseHTTPRequestHandler):
             endpoint=path,
             error_message=error_message,
             agent_id=self._agent_id,
+            context_id=self._context_id,
         )
 
         # Optional: Tool Call Guard inspection
@@ -380,7 +388,7 @@ class ThreadedProxyServer(ThreadingMixIn, HTTPServer):
     daemon_threads = True
 
 
-def start_proxy(port: int = 8377, host: str = "127.0.0.1", use_guard: bool = False, agent_id: str | None = None) -> ThreadedProxyServer:
+def start_proxy(port: int = 8377, host: str = "127.0.0.1", use_guard: bool = False, agent_id: str | None = None, context_id: str | None = None) -> ThreadedProxyServer:
     """Start the agent hook proxy server.
 
     Args:
@@ -388,6 +396,7 @@ def start_proxy(port: int = 8377, host: str = "127.0.0.1", use_guard: bool = Fal
         host: Host to bind to (default 127.0.0.1).
         use_guard: Enable optional Tool Call Guard.
         agent_id: Registered agent ID for execution tracking.
+        context_id: Execution context ID to associate with captured traces.
 
     Returns:
         The HTTP server instance (call .serve_forever() to run).
@@ -398,6 +407,8 @@ def start_proxy(port: int = 8377, host: str = "127.0.0.1", use_guard: bool = Fal
         print()
     if agent_id:
         ProxyHandler.set_agent_id(agent_id)
+    if context_id:
+        ProxyHandler.set_context_id(context_id)
     server = ThreadedProxyServer((host, port), ProxyHandler)
     # Onboarding instructions are printed by commands/proxy.py
     return server

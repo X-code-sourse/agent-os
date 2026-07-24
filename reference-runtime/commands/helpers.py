@@ -201,11 +201,11 @@ def get_event_store() -> Any:
     return EventStore(db_path=str(db_path))
 
 
-def save_to_event_store(record: Any) -> None:
+def save_to_event_store(record: Any, context_id: str | None = None) -> None:
     """Save an ExecutionRecord to the default Event Store."""
     store = get_event_store()
     store.save_events_batch(record.events)
-    store.save_execution_record(record)
+    store.save_execution_record(record, context_id=context_id)
 
 
 def display_record(record: Any, output_file: str | None = None) -> None:
