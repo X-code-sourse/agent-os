@@ -232,6 +232,24 @@ def cmd_doctor(args: Any) -> None:
         except Exception:
             pass  # Failure diagnosis is best-effort -- never crash the doctor
 
+    # ── Environment context (SPEC-0010 Layer 6) ──
+    try:
+        from core.environment_context import format_environment, detect_environment
+        env = detect_environment()
+        print(f"  {'─' * 48}")
+        print(f"  Environment")
+        print(f"  {'─' * 48}")
+        print()
+        print(f"  Runtime:     {env.runtime_version}")
+        print(f"  Platform:    {env.platform} (Python {env.python_version})")
+        adapters_str = "  ".join(sorted(env.available_adapters)) if env.available_adapters else "(none)"
+        print(f"  Adapters:    {adapters_str}")
+        if env.default_adapter:
+            print(f"  Default:     {env.default_adapter}")
+        print()
+    except Exception:
+        pass
+
     # Cost intelligence for all executions
     try:
         cost_intel = CostIntelligence(store)

@@ -90,7 +90,28 @@ def build_injection_prompt(agent_id: str,
     except Exception:
         pass
 
-    # ── 3. Last context (optional) ──
+    # ── 3. Environment context (SPEC-0010 Layer 6) ──
+    try:
+        from core.environment_context import format_environment
+        env_text = format_environment()
+        if env_text:
+            parts.append("")
+            parts.append(env_text)
+    except Exception:
+        pass
+
+    # ── 4. Relationship context (SPEC-0010 Layer 5) ──
+    try:
+        from core.relationship_context import compute_relationships, format_relationships
+        rel = compute_relationships(agent_id, agent_name=agent.name)
+        rel_text = format_relationships(rel)
+        if rel_text:
+            parts.append("")
+            parts.append(rel_text)
+    except Exception:
+        pass
+
+    # ── 5. Last context (optional) ──
     try:
         from core.context_store import ContextStore
         ctx_store = ContextStore(db_path)

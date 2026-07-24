@@ -152,6 +152,40 @@ def retrieve_context(
     except Exception:
         pass
 
+    # ── Match environment ──
+    env_keywords = ["adapter", "runtime", "platform", "ollama", "openai", "anthropic",
+                    "tool", "environment", "where", "running"]
+    if any(kw in keywords for kw in env_keywords):
+        try:
+            from core.environment_context import detect_environment, format_environment
+            env = detect_environment()
+            results.append(RetrievedContext(
+                source="environment",
+                relevance_score=0.6,
+                content=f"Runtime: {env.runtime_version} | Adapters: {', '.join(env.available_adapters)}",
+                confidence=1.0,
+                source_id="environment",
+            ))
+        except Exception:
+            pass
+
+    # ── Match relationships ──
+    rel_keywords = ["team", "teammate", "collaborate", "who", "partner", "member"]
+    if any(kw in keywords for kw in rel_keywords):
+        try:
+            from core.relationship_context import compute_relationships
+            rel = compute_relationships(agent_id)
+            for t in rel.teams:
+                results.append(RetrievedContext(
+                    source="relationship",
+                    relevance_score=0.7,
+                    content=f"Team {t.name}: {t.member_count} members",
+                    confidence=1.0,
+                    source_id=t.team_id,
+                ))
+        except Exception:
+            pass
+
     # ── Sort and limit ──
     results.sort(key=lambda r: r.relevance_score, reverse=True)
     return results[:max_results]

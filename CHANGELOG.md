@@ -4,6 +4,20 @@ All notable changes to Intent OS are documented here.
 
 ---
 
+## v0.12.0 (2026-07-24)
+
+### Environment + Relationship Context — SPEC-0010 Complete
+
+- **`core/environment_context.py`** — New module: `detect_environment()` auto-detects available adapters (by env var + Ollama ping), platform, Python version, and pricing overrides. Pure runtime self-check, no database needed.
+- **`core/relationship_context.py`** — New module: `compute_relationships(agent_id)` aggregates team membership and cross-agent collaboration from existing execution_records sharing the same context_id.
+- **`intent-os doctor` Environment block** — Doctor output now shows runtime version, platform, adapters status, and default adapter.
+- **Injector includes environment + relationships** — `build_injection_prompt()` now injects environment info (runtime, adapters) and relationship info (teams, collaborators) into the LLM system prompt.
+- **Context retrieval covers all 6 layers** — `retrieve_context()` now searches identity, capability, experience, environment, and relationship context.
+- **16 new tests** — Environment detection, format output, relationship aggregation, empty profiles. 895 tests total, zero regressions.
+- **SPEC-0010: Complete** — All six layers of Agent Context now have reference implementations.
+
+---
+
 ## v0.11.0 (2026-07-24)
 
 ### Context Retrieval — Relevant Context, Not Everything
