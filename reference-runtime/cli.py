@@ -73,7 +73,7 @@ def build_parser() -> argparse.ArgumentParser:
         description="Intent OS Reference Runtime - Open AI Capability Interoperability",
         epilog="Phase 0 - Prove that one Manifest can run on multiple runtimes.",
     )
-    parser.add_argument("--version", action="version", version="intent-os 0.8.0")
+    parser.add_argument("--version", action="version", version="intent-os 0.9.0")
 
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
@@ -183,6 +183,7 @@ def build_parser() -> argparse.ArgumentParser:
     mcp_start.add_argument("--port", type=int, default=8080)
     mcp_start.add_argument("--host", default="127.0.0.1")
     mcp_start.add_argument("--adapter", default="ollama")
+    mcp_start.add_argument("--agent", default=None, help="Agent ID to expose as MCP resources")
     mcp_start.set_defaults(func=CMD_MAP["mcp-server"])
     mcp_status = mcp_sub.add_parser("status", help="Show MCP Server status")
     mcp_status.add_argument("--port", type=int, default=8080)

@@ -120,10 +120,12 @@ class MCPServer:
         host: str = "127.0.0.1",
         port: int = 8080,
         adapter: str = "ollama",
+        agent_id: str | None = None,
     ) -> None:
         self.host = host
         self.port = port
         self.adapter = adapter
+        self.agent_id = agent_id
         self._httpd: HTTPServer | None = None
         self._running = False
 
@@ -238,6 +240,146 @@ class MCPServer:
 
         return jsonrpc_result({"content": [{"type": "text", "text": json.dumps(output, indent=2, default=str)}]}, id=msg_id)
 
+    # ── MCP Resources (Phase D: Agent as discoverable resources) ──
+
+    def _build_agent_resources(self) -> list[dict[str, Any]]:
+        """Build the list of MCP resources for all registered agents.
+
+        Resource URI scheme:
+          intent-os://agents                  → agent directory listing
+          intent-os://agents/{id}             → full .agent package
+          intent-os://agents/{id}/identity    → identity fields
+          intent-os://agents/{id}/experiences → experiences
+        """
+        resources: list[dict[str, Any]] = []
+        try:
+            from core.agent_store import AgentStore
+            store = AgentStore()
+            agents = store.list()
+
+            # Directory resource
+            resources.append({
+                "uri": "intent-os://agents",
+                "name": "Intent OS Agents",
+                "description": "All registered AI agents",
+                "mimeType": "application/json",
+            })
+
+            for agent in agents:
+                aid = agent.agent_id
+                desc = agent.persona or agent.name
+                resources.append({
+                    "uri": f"intent-os://agents/{aid}",
+                    "name": f"{agent.name} (.agent)",
+                    "description": desc,
+                    "mimeType": "application/json",
+                })
+                resources.append({
+                    "uri": f"intent-os://agents/{aid}/identity",
+                    "name": f"{agent.name} — Identity",
+                    "description": f"Agent profile: {desc}",
+                    "mimeType": "application/json",
+                })
+                resources.append({
+                    "uri": f"intent-os://agents/{aid}/experiences",
+                    "name": f"{agent.name} — Experiences",
+                    "description": f"Learned experiences",
+                    "mimeType": "application/json",
+                })
+        except Exception:
+            pass
+        return resources
+
+    def _handle_resources_list(self, msg_id: Any) -> dict[str, Any]:
+        """Handle MCP resources/list request.
+
+        Returns all agent-related resources as URI-addressable resources.
+        """
+        resources = self._build_agent_resources()
+        return jsonrpc_result({"resources": resources}, id=msg_id)
+
+    def _handle_resources_read(self, params: dict[str, Any], msg_id: Any) -> dict[str, Any]:
+        """Handle MCP resources/read request.
+
+        Reads the resource at the given URI and returns its content.
+        """
+        uri = params.get("uri", "")
+
+        if not uri:
+            return jsonrpc_error(-32602, "Missing required parameter: 'uri'", id=msg_id)
+
+        try:
+            # intent-os://agents — list all agents
+            if uri == "intent-os://agents":
+                from core.agent_store import AgentStore
+                store = AgentStore()
+                agents = store.list()
+                agent_list = []
+                for a in agents:
+                    agent_list.append({
+                        "agent_id": a.agent_id,
+                        "name": a.name,
+                        "persona": a.persona or "",
+                        "traits": a.traits or [],
+                        "avatar": a.avatar or "",
+                        "status": a.status,
+                        "capabilities": a.capabilities or [],
+                    })
+                content = json.dumps({"agents": agent_list}, indent=2, ensure_ascii=False)
+                return jsonrpc_result({
+                    "contents": [{"uri": uri, "mimeType": "application/json", "text": content}]
+                }, id=msg_id)
+
+            # intent-os://agents/{id} — full .agent package
+            if uri.count("/") == 2 and uri.startswith("intent-os://agents/"):
+                agent_id = uri.split("/")[-1]
+                from core.agent_package import export_agent
+                pkg = export_agent(agent_id)
+                content = json.dumps(pkg, indent=2, ensure_ascii=False)
+                return jsonrpc_result({
+                    "contents": [{"uri": uri, "mimeType": "application/json", "text": content}]
+                }, id=msg_id)
+
+            # intent-os://agents/{id}/identity
+            if uri.endswith("/identity"):
+                agent_id = uri.split("/")[3]
+                from core.agent_store import AgentStore
+                store = AgentStore()
+                agent = store.get(agent_id)
+                if agent is None:
+                    return jsonrpc_error(-32602, f"Agent not found: {agent_id}", id=msg_id)
+                data = {
+                    "agent_id": agent.agent_id,
+                    "name": agent.name,
+                    "persona": agent.persona or "",
+                    "traits": agent.traits or [],
+                    "avatar": agent.avatar or "",
+                    "owner": agent.owner or "",
+                    "status": agent.status,
+                    "capabilities": agent.capabilities or [],
+                    "created_at": agent.created_at or "",
+                }
+                return jsonrpc_result({
+                    "contents": [{"uri": uri, "mimeType": "application/json",
+                                  "text": json.dumps(data, indent=2, ensure_ascii=False)}]
+                }, id=msg_id)
+
+            # intent-os://agents/{id}/experiences
+            if uri.endswith("/experiences"):
+                agent_id = uri.split("/")[3]
+                from core.experience_store import ExperienceStore
+                exp_store = ExperienceStore()
+                exps = exp_store.list(agent_id=agent_id, limit=50)
+                return jsonrpc_result({
+                    "contents": [{"uri": uri, "mimeType": "application/json",
+                                  "text": json.dumps(exps, indent=2, ensure_ascii=False)}]
+                }, id=msg_id)
+
+            return jsonrpc_error(-32602, f"Unknown resource URI: {uri}", id=msg_id)
+
+        except Exception as exc:
+            return jsonrpc_error(-32603, f"Resource read failed: {exc}", id=msg_id)
+
     def _process_message(self, body: dict[str, Any]) -> dict[str, Any]:
         """Process a JSON-RPC message and return a response."""
         msg_id = body.get("id")
@@ -248,6 +390,10 @@ class MCPServer:
             return self._handle_tools_list(msg_id)
         elif method == "tools/call":
             return self._handle_tools_call(params, msg_id)
+        elif method == "resources/list":
+            return self._handle_resources_list(msg_id)
+        elif method == "resources/read":
+            return self._handle_resources_read(params, msg_id)
         else:
             return jsonrpc_error(-32601, f"Method not found: '{method}'", id=msg_id)
 

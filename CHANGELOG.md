@@ -4,6 +4,17 @@ All notable changes to Intent OS are documented here.
 
 ---
 
+## v0.9.0 (2026-07-24)
+
+### MCP Agent Resources — Agents Discoverable by Any Runtime
+
+- **MCP resources/list** — The MCP server now exposes all registered agents as URI-addressable resources (`intent-os://agents/{id}`, `/identity`, `/experiences`). Any MCP-compatible client (Claude Code, Cursor) can discover available agents via the standard MCP resource protocol.
+- **MCP resources/read** — Clients can read an agent's full `.agent` package, identity profile, or recent experiences through resource URIs. Enables Runtime-native agent loading without proxy interception.
+- **`intent-os mcp-server start --agent <id>`** — New `--agent` flag to associate an agent with the MCP server. The agent's identity and capabilities are immediately discoverable.
+- **8 MCP resource tests** — Protocol compliance tests for resources/list and resources/read including error cases. 850 tests total, zero regressions.
+
+---
+
 ## v0.8.0 (2026-07-24)
 
 ### Runtime Self-Awareness — Agent Knows Who It Is

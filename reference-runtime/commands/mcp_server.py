@@ -20,15 +20,19 @@ def cmd_mcp_server(args: Any) -> None:
     from mcp_server import MCPServer
 
     if args.mcp_action == "start":
+        agent_id = getattr(args, "agent", None)
         server = MCPServer(
             host=args.host,
             port=args.port,
             adapter=args.adapter,
+            agent_id=agent_id,
         )
         print(f"[OK] Starting Intent OS MCP Server on {args.host}:{args.port}")
         print(f"  SSE: http://{args.host}:{args.port}/sse")
         print(f"  Messages: POST http://{args.host}:{args.port}/messages")
         print(f"  Adapter: {args.adapter}")
+        if agent_id:
+            print(f"  Agent:     {agent_id}")
         print("  Press Ctrl+C to stop.")
         try:
             server.run()
