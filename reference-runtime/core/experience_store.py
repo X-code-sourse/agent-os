@@ -39,7 +39,7 @@ from typing import Any
 from core.models import Experience, _VALID_EXPERIENCE_TYPES
 
 # Default database path
-EXPERIENCE_DB = str(Path.home() / ".intent-os" / "experience.db")
+EXPERIENCE_DB = str(Path.home() / ".intent-os" / "intent.db")
 
 # Current schema version — bump when columns are added
 _SCHEMA_VERSION = 1

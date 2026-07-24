@@ -20,7 +20,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from proxy.tracer import AgentTracer, detect_agent, estimate_cost
+from proxy.tracer import AgentTracer, detect_agent
+from core.pricing import estimate_cost
 from proxy.server import ProxyHandler, start_proxy
 
 

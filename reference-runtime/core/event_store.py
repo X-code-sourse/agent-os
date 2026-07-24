@@ -33,8 +33,23 @@ from core.models import Event, EventType, ExecutionRecord, ExecutionStatus
 from core.recorder import ExecutionRecorder
 
 
+# Unified database path — all stores share a single intent.db
+UNIFIED_DB = str(Path.home() / ".intent-os" / "intent.db")
+
 # Schema version to support future migrations
 SCHEMA_VERSION = 2
+
+
+def _table_exists_quiet(conn: Any, table: str) -> bool:
+    """Check if a table exists in the given connection."""
+    try:
+        cursor = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+            (table,),
+        )
+        return cursor.fetchone() is not None
+    except Exception:
+        return False
 
 
 def _migrate_event_store_schema(conn: Any) -> None:
@@ -148,7 +163,10 @@ class EventStore:
         events = store.get_events_by_trace("some-trace-id")
     """
 
-    def __init__(self, db_path: str | Path = "intent_os_store.db") -> None:
+    def __init__(self, db_path: str | Path | None = None) -> None:
+        if db_path is None:
+            db_path = UNIFIED_DB
+        Path(db_path).parent.mkdir(parents=True, exist_ok=True)
         self._db_path = Path(db_path)
         self._local = threading.local()
         self._lock = threading.Lock()
@@ -156,6 +174,10 @@ class EventStore:
         # Initialize database
         with self._lock:
             self._init_db()
+
+        # Auto-migrate old per-store DBs into the unified DB on first access
+        if str(self._db_path) == UNIFIED_DB:
+            self._maybe_migrate()
 
     # ── Connection Management ──
 
@@ -202,6 +224,121 @@ class EventStore:
             ("schema_version", str(SCHEMA_VERSION)),
         )
         conn.commit()
+
+    def _maybe_migrate(self) -> None:
+        """Auto-migrate old per-store DBs into the unified intent.db.
+
+        Only runs when the old individual DB files exist and the unified
+        DB has just been created (i.e., its meta table has no schema_version
+        entry from an older unified DB).  Old DBs are never deleted —
+        users must remove them manually after confirming the migration.
+        """
+        # Only migrate if this is a fresh intent.db (no previous schema_version)
+        conn = self._get_conn()
+        try:
+            existing = conn.execute(
+                "SELECT value FROM meta WHERE key = 'db_migrated'"
+            ).fetchone()
+            if existing:
+                return  # Already migrated — skip
+        except Exception:
+            pass  # meta table may not exist yet during _init_db
+
+        base_dir = Path.home() / ".intent-os"
+        old_files = [
+            "events.db", "agents.db", "contexts.db", "evidence.db",
+            "experience.db", "store.db", "policies.db",
+        ]
+
+        any_old = any((base_dir / f).exists() for f in old_files)
+        if not any_old:
+            # Mark as migrated so we don't check again
+            conn.execute(
+                "INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)",
+                ("db_migrated", "1"),
+            )
+            conn.commit()
+            return
+
+        import sqlite3 as _sqlite3
+
+        total = 0
+        for old_name in old_files:
+            old_path = base_dir / old_name
+            if not old_path.exists():
+                continue
+
+            try:
+                old = _sqlite3.connect(str(old_path), timeout=10)
+                old.row_factory = _sqlite3.Row
+
+                tables = [
+                    r[0] for r in
+                    old.execute(
+                        "SELECT name FROM sqlite_master "
+                        "WHERE type='table' AND name NOT LIKE 'sqlite_%' "
+                        "AND name != '_schema_version'"
+                    ).fetchall()
+                ]
+
+                for table in tables:
+                    cols = [c[1] for c in old.execute(
+                        f"PRAGMA table_info({table})"
+                    ).fetchall()]
+                    if not cols:
+                        continue
+                    col_list = ", ".join(cols)
+                    ph = ", ".join("?" for _ in cols)
+
+                    # Ensure table exists in unified DB
+                    if not _table_exists_quiet(conn, table):
+                        try:
+                            row = old.execute(
+                                "SELECT sql FROM sqlite_master "
+                                "WHERE type='table' AND name=?",
+                                (table,),
+                            ).fetchone()
+                            if row:
+                                conn.execute(row[0])
+                        except _sqlite3.OperationalError:
+                            continue
+
+                    rows = old.execute(
+                        f"SELECT {col_list} FROM {table}"
+                    ).fetchall()
+                    for row in rows:
+                        try:
+                            conn.execute(
+                                f"INSERT OR IGNORE INTO {table} "
+                                f"({col_list}) VALUES ({ph})",
+                                tuple(row),
+                            )
+                            total += 1
+                        except _sqlite3.OperationalError:
+                            pass
+
+                old.close()
+            except _sqlite3.Error:
+                pass
+
+        conn.execute(
+            "INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)",
+            ("db_migrated", "1"),
+        )
+        conn.commit()
+
+        if total > 0:
+            import sys as _sys
+            print(
+                f"\n[intent-os] Auto-migrated {total} rows from legacy DBs "
+                f"into {self._db_path}",
+                file=_sys.stderr,
+            )
+            print(
+                f"[intent-os] Old DBs preserved at {base_dir}/. "
+                f"You can delete them manually.",
+                file=_sys.stderr,
+            )
 
     def close(self) -> None:
         """Close the database connection."""

@@ -32,9 +32,10 @@ def _db_path_from_args(args: Any) -> str:
     """Resolve the policy-store database path.
 
     Prefer the value from the ``--store`` flag; fall back to the default
-    ``"intent_os_policies.db"`` in the working directory.
+    ``~/.intent-os/intent.db``.
     """
-    return getattr(args, "store", None) or "intent_os_policies.db"
+    from core.security import POLICY_DB
+    return getattr(args, "store", None) or POLICY_DB
 
 
 def _print_json(data: Any) -> None:

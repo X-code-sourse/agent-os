@@ -50,7 +50,12 @@ def _parse_payload(payload_str: str) -> dict[str, Any]:
 
 
 def cmd_cost(args: Any) -> None:
-    """Show API cost breakdown."""
+    """Show API cost breakdown or manage pricing."""
+    action = getattr(args, "action", None)
+    if action == "prices":
+        _cmd_cost_prices(args)
+        return
+
     store = get_event_store()
     days = getattr(args, "days", 30)
     by = getattr(args, "by", None)
@@ -208,3 +213,79 @@ def cmd_cost(args: Any) -> None:
         for day, cost in sorted_days[-7:]:
             print(f"  {day:<14} ${cost:<9.4f}")
         print()
+
+
+# ── cost prices subcommand ────────────────────────────────────────────────
+
+
+def _cmd_cost_prices(args: Any) -> None:
+    """Manage model pricing: list or update."""
+    from core.pricing import load_pricing, save_pricing
+
+    prices_action = getattr(args, "prices_action", "list")
+
+    if prices_action == "list":
+        _cmd_cost_prices_list(args)
+    elif prices_action == "update":
+        _cmd_cost_prices_update(args)
+    else:
+        _cmd_cost_prices_list(args)
+
+
+def _cmd_cost_prices_list(_args: Any) -> None:
+    """Print the current pricing table."""
+    from core.pricing import load_pricing
+
+    pricing = load_pricing()
+
+    print()
+    print("  ================================================")
+    print("    Model Pricing  (USD per 1M tokens)")
+    print("  ================================================")
+    print()
+    print(f"  {'Model':<32} {'Input':>10} {'Output':>10}")
+    print(f"  {'-'*54}")
+    for model in sorted(pricing):
+        rates = pricing[model]
+        print(f"  {model:<32} ${rates['input']:>8.2f} ${rates['output']:>8.2f}")
+    print()
+    print(f"  {len(pricing)} models listed.")
+    print(f"  To customize, edit: ~/.intent-os/pricing.yaml")
+    print()
+
+
+def _cmd_cost_prices_update(args: Any) -> None:
+    """Update a model's pricing in the user's pricing file."""
+    from core.pricing import load_pricing, save_pricing
+
+    model = getattr(args, "model", None)
+    input_price = getattr(args, "input", None)
+    output_price = getattr(args, "output", None)
+
+    if not model:
+        print("Error: --model is required for update.", file=sys.stderr)
+        sys.exit(1)
+    if input_price is None and output_price is None:
+        print("Error: --input and/or --output is required.", file=sys.stderr)
+        sys.exit(1)
+
+    pricing = load_pricing()
+
+    if model not in pricing:
+        print(f"  Model '{model}' not found in pricing table. Adding as new entry.")
+
+    entry = dict(pricing.get(model, {}))
+    if input_price is not None:
+        entry["input"] = float(input_price)
+    if output_price is not None:
+        entry["output"] = float(output_price)
+
+    pricing[model] = entry
+    save_pricing(pricing)
+
+    print()
+    print(f"  Updated pricing for '{model}':")
+    print(f"    Input:  ${entry['input']:.2f} per 1M tokens")
+    print(f"    Output: ${entry['output']:.2f} per 1M tokens")
+    print(f"  Saved to ~/.intent-os/pricing.yaml")
+    print()

@@ -186,7 +186,7 @@ def get_registry_store() -> tuple[Path, Any]:
     """Get or create the default persistent registry store."""
     store_dir = Path.home() / ".intent-os"
     store_dir.mkdir(parents=True, exist_ok=True)
-    db_path = store_dir / "store.db"
+    db_path = store_dir / "intent.db"
     from core.registry import CapabilityRegistry
     registry = CapabilityRegistry(db_path=str(db_path))
     return db_path, registry
@@ -196,7 +196,7 @@ def get_event_store() -> Any:
     """Get or create the default persistent Event Store."""
     store_dir = Path.home() / ".intent-os"
     store_dir.mkdir(parents=True, exist_ok=True)
-    db_path = store_dir / "events.db"
+    db_path = store_dir / "intent.db"
     from core.event_store import EventStore
     return EventStore(db_path=str(db_path))
 

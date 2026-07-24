@@ -43,8 +43,14 @@ from enum import Enum
 from fnmatch import fnmatch
 from typing import Any
 
+from pathlib import Path
+
 from core.event_store import EventStore
 from core.models import Event, EventType
+
+
+# Unified default database path for the policy store
+POLICY_DB = str(Path.home() / ".intent-os" / "intent.db")
 
 
 # ════════════════════════════════════════════════════════════════

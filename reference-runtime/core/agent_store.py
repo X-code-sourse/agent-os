@@ -33,7 +33,7 @@ from core.models import Event, EventType
 _log = logging.getLogger(__name__)
 
 
-AGENT_STORE_DB = str(Path.home() / ".intent-os" / "agents.db")
+AGENT_STORE_DB = str(Path.home() / ".intent-os" / "intent.db")
 
 CREATE_AGENTS_TABLE = """
 CREATE TABLE IF NOT EXISTS agents (

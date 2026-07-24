@@ -23,7 +23,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-CONTEXT_DB = str(Path.home() / ".intent-os" / "contexts.db")
+CONTEXT_DB = str(Path.home() / ".intent-os" / "intent.db")
 
 CREATE_CONTEXTS = """
 CREATE TABLE IF NOT EXISTS execution_contexts (

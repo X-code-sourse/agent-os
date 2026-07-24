@@ -28,75 +28,17 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from core.event_store import EventStore
+from core.pricing import (
+    CHEAPER_ALTERNATIVES,
+    MODEL_CONTEXT_LIMITS,
+    load_pricing,
+    model_display_name,
+)
 
 
 # ---------------------------------------------------------------------------
-# Pricing tables (aligned with proxy/tracer.py and core/cost_model.py)
+# Pricing tables (externalized to core.pricing)
 # ---------------------------------------------------------------------------
-
-# USD per 1M tokens — canonical pricing table
-_MODEL_PRICING_PER_1M: dict[str, dict[str, float]] = {
-    # OpenAI
-    "gpt-4o":           {"input": 2.50,  "output": 10.00},
-    "gpt-4o-mini":       {"input": 0.15,  "output": 0.60},
-    "gpt-4.1":           {"input": 2.00,  "output": 8.00},
-    "gpt-4.1-mini":      {"input": 0.40,  "output": 1.60},
-    "gpt-4.1-nano":      {"input": 0.10,  "output": 0.40},
-    "o3":                {"input": 10.00, "output": 40.00},
-    "o4-mini":           {"input": 1.10,  "output": 4.40},
-    "o1":                {"input": 15.00, "output": 60.00},
-    "o1-mini":           {"input": 1.10,  "output": 4.40},
-    # Anthropic
-    "claude-sonnet-4":            {"input": 3.00,  "output": 15.00},
-    "claude-sonnet-4-20250514":   {"input": 3.00,  "output": 15.00},
-    "claude-3.5-sonnet":          {"input": 3.00,  "output": 15.00},
-    "claude-opus-4":              {"input": 15.00, "output": 75.00},
-    "claude-haiku-3.5":           {"input": 0.80,  "output": 4.00},
-}
-
-# Model context windows (tokens) — used to detect near-limit usage
-_MODEL_CONTEXT_LIMITS: dict[str, int] = {
-    "gpt-4o":                128_000,
-    "gpt-4o-mini":           128_000,
-    "gpt-4.1":               1_000_000,
-    "gpt-4.1-mini":          1_000_000,
-    "gpt-4.1-nano":          1_000_000,
-    "o3":                    200_000,
-    "o4-mini":               200_000,
-    "o1":                    200_000,
-    "o1-mini":               200_000,
-    "claude-sonnet-4":       200_000,
-    "claude-sonnet-4-20250514": 200_000,
-    "claude-3.5-sonnet":     200_000,
-    "claude-opus-4":         200_000,
-    "claude-haiku-3.5":      200_000,
-}
-
-# Cheaper alternative for each model (sorted by cost, same provider preferred)
-_CHEAPER_ALTERNATIVE: dict[str, list[tuple[str, str]]] = {
-    "claude-opus-4": [
-        ("claude-sonnet-4", "Same provider — Sonnet 4 is 5x cheaper input, 5x cheaper output"),
-        ("claude-haiku-3.5", "Same provider — Haiku is 18x cheaper input, 18x cheaper output"),
-        ("gpt-4o-mini", "Cross-provider — GPT-4o mini is 100x cheaper input than Opus"),
-    ],
-    "claude-sonnet-4": [
-        ("claude-haiku-3.5", "Same provider — Haiku is 3.75x cheaper input, 3.75x cheaper output"),
-    ],
-    "claude-3.5-sonnet": [
-        ("claude-haiku-3.5", "Same provider — Haiku is 3.75x cheaper input, 3.75x cheaper output"),
-    ],
-    "gpt-4o": [
-        ("gpt-4.1", "Same provider — GPT-4.1 is 20% cheaper input, same family"),
-        ("gpt-4o-mini", "Same provider — GPT-4o mini is 16x cheaper"),
-    ],
-    "o3": [
-        ("o4-mini", "Same provider — o4-mini is 9x cheaper input, 9x cheaper output"),
-    ],
-    "o1": [
-        ("o1-mini", "Same provider — o1-mini is 13x cheaper input, 13x cheaper output"),
-        ("o4-mini", "Same provider — o4-mini is 13x cheaper input, 13x cheaper output"),
-    ],
-}
 
 
 # ---------------------------------------------------------------------------
@@ -125,12 +67,7 @@ def _safe_int(val: Any, default: int = 0) -> int:
         return default
 
 
-def _model_display_name(model: str) -> str:
-    """Human-readable model name with pricing. e.g. 'claude-opus-4 ($15/$75 per 1M)'."""
-    p = _MODEL_PRICING_PER_1M.get(model)
-    if p:
-        return f"{model} (${p['input']:.0f}/${p['output']:.0f} per 1M tokens)"
-    return model
+# _model_display_name is now model_display_name from core.pricing
 
 
 # ---------------------------------------------------------------------------
@@ -355,7 +292,7 @@ class CostIntelligence:
                     "cost": round(cost, 6),
                     "agent_name": source_agent,
                     "what_happened": (
-                        f"LLM call to {_model_display_name(model)} "
+                        f"LLM call to {model_display_name(model)} "
                         f"(input={input_t:,} tokens, output={output_t:,} tokens, "
                         f"status={status}) — on {ts[:10]}"
                     ),
@@ -385,7 +322,7 @@ class CostIntelligence:
                 "percentage": round(data["cost"] / max(total_cost, 0.000001) * 100, 1),
                 "avg_input_tokens": round(data["input_tokens"] / max(data["calls"], 1)),
                 "avg_output_tokens": round(data["output_tokens"] / max(data["calls"], 1)),
-                "pricing": _MODEL_PRICING_PER_1M.get(model),
+                "pricing": load_pricing().get(model),
             })
 
         # ── 7. Cost by agent (with percentages) ───────────────────────
@@ -662,7 +599,7 @@ class CostIntelligence:
         oversized_cost = 0.0
         for call in all_calls:
             model = call.get("model", "")
-            limit = _MODEL_CONTEXT_LIMITS.get(model)
+            limit = MODEL_CONTEXT_LIMITS.get(model)
             total_t = call.get("total_tokens", 0)
             if limit and total_t > limit * 0.8:
                 oversized_count += 1
@@ -742,7 +679,7 @@ class CostIntelligence:
 
         for agent, models_used in agent_model_usage.items():
             for model, calls in models_used.items():
-                alternatives = _CHEAPER_ALTERNATIVE.get(model, [])
+                alternatives = CHEAPER_ALTERNATIVES.get(model, [])
                 if not alternatives:
                     continue
 
@@ -754,7 +691,7 @@ class CostIntelligence:
                 success_rate = successes / max(num_calls, 1)
 
                 for alt_model, rationale in alternatives:
-                    alt_pricing = _MODEL_PRICING_PER_1M.get(alt_model)
+                    alt_pricing = load_pricing().get(alt_model)
                     if not alt_pricing:
                         continue
 
@@ -766,7 +703,7 @@ class CostIntelligence:
                     if total_input + total_output == 0:
                         projected_cost = current_cost * 0.3
                     else:
-                        current_pricing = _MODEL_PRICING_PER_1M.get(model)
+                        current_pricing = load_pricing().get(model)
                         if current_pricing:
                             projected_cost = (
                                 total_input / 1_000_000 * alt_pricing["input"]
@@ -788,8 +725,8 @@ class CostIntelligence:
 
                     how_to = (
                         f"Switch agent '{agent}' from "
-                        f"{_model_display_name(model)} to "
-                        f"{_model_display_name(alt_model)}. {rationale}. "
+                        f"{model_display_name(model)} to "
+                        f"{model_display_name(alt_model)}. {rationale}. "
                         f"Run: {export_var}. "
                         f"Estimated savings: ${savings:.2f}/month "
                         f"({num_calls} calls, {success_rate:.0%} success rate "
@@ -833,7 +770,7 @@ class CostIntelligence:
                 by_model[model].append(call)
 
         for model, calls in by_model.items():
-            limit = _MODEL_CONTEXT_LIMITS.get(model)
+            limit = MODEL_CONTEXT_LIMITS.get(model)
             if not limit:
                 continue
 
@@ -1299,12 +1236,12 @@ class CostIntelligence:
         # Per-model pricing awareness (>10% of spend)
         for model_entry in analysis.get("cost_by_model", []):
             model = model_entry["model"]
-            pricing = _MODEL_PRICING_PER_1M.get(model)
+            pricing = load_pricing().get(model)
             if pricing and model_entry["percentage"] > 10:
-                alternatives = _CHEAPER_ALTERNATIVE.get(model, [])
+                alternatives = CHEAPER_ALTERNATIVES.get(model, [])
                 if alternatives:
                     alt_model, rationale = alternatives[0]
-                    alt_price = _MODEL_PRICING_PER_1M.get(alt_model, {})
+                    alt_price = load_pricing().get(alt_model, {})
                     if alt_price:
                         current_monthly = model_entry["cost"]
                         ratio = (
@@ -1324,8 +1261,8 @@ class CostIntelligence:
 
                             opportunities.append({
                                 "action": (
-                                    f"Replace {_model_display_name(model)} "
-                                    f"with {_model_display_name(alt_model)} "
+                                    f"Replace {model_display_name(model)} "
+                                    f"with {model_display_name(alt_model)} "
                                     f"({model_entry['percentage']:.0f}% of "
                                     f"spend)"
                                 ),

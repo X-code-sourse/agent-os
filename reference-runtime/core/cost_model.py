@@ -17,6 +17,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from core.models import CapabilityManifest
+from core.pricing import DEFAULT_MODELS, ZERO_COST_MODELS, load_pricing, MODEL_CONTEXT_LIMITS  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Import PlanResult lazily to avoid circular imports
@@ -34,53 +35,11 @@ def _get_plan_result_type():
 
 
 # ---------------------------------------------------------------------------
-# Default pricing tables  (embedded — no adapter imports needed)
+# Pricing tables (externalized to core.pricing)
 # ---------------------------------------------------------------------------
 
-# Default models per adapter
-DEFAULT_MODELS: dict[str, str] = {
-    "openai": "gpt-4o",
-    "anthropic": "claude-sonnet-4",
-    "ollama": "llama3.2:1b",
-    "openrouter": "gpt-4o",
-    "github-models": "gpt-4o-mini",
-}
-
-# Model pricing per 1M tokens (input/output)
-MODEL_PRICING: dict[str, dict[str, float]] = {
-    # OpenAI
-    "gpt-4o": {"input": 2.50, "output": 10.00},
-    "gpt-4o-mini": {"input": 0.15, "output": 0.60},
-    # Anthropic
-    "claude-sonnet-4": {"input": 3.00, "output": 15.00},
-    "claude-haiku-3.5": {"input": 0.80, "output": 4.00},
-    # Ollama — local, free
-    # OpenRouter — uses openai/anthropic pricing per model
-    # GitHub Models — free tier
-}
-
-# Models whose cost is always zero (local / free tier)
-ZERO_COST_MODELS: set[str] = set()
-
-# Adapter-level pricing overrides: adapter -> model -> pricing
-ADAPTER_PRICING: dict[str, dict[str, dict[str, float]]] = {
-    "openai": {
-        "gpt-4o": {"input": 2.50, "output": 10.00},
-        "gpt-4o-mini": {"input": 0.15, "output": 0.60},
-    },
-    "anthropic": {
-        "claude-sonnet-4": {"input": 3.00, "output": 15.00},
-        "claude-haiku-3.5": {"input": 0.80, "output": 4.00},
-    },
-    "ollama": {},  # All models free (local inference)
-    "openrouter": {
-        "gpt-4o": {"input": 2.50, "output": 10.00},
-        "gpt-4o-mini": {"input": 0.15, "output": 0.60},
-        "claude-sonnet-4": {"input": 3.00, "output": 15.00},
-        "claude-haiku-3.5": {"input": 0.80, "output": 4.00},
-    },
-    "github-models": {},  # Free tier
-}
+# Adapters whose models are always free (local inference / free tier)
+_FREE_ADAPTERS: set[str] = {"ollama", "github-models"}
 
 # Base latency (ms) per adapter — represents model response start overhead
 ADAPTER_BASE_LATENCY_MS: dict[str, int] = {
@@ -453,7 +412,8 @@ class CostModel:
             # hint contains both.
             # NOTE: We check model-name-in-hint only, never the
             # reverse — that would let "gpt-4o" match "gpt-4o-mini".
-            for known_model in sorted(MODEL_PRICING, key=len, reverse=True):
+            pricing = load_pricing()
+            for known_model in sorted(pricing, key=len, reverse=True):
                 km_lower = known_model.lower()
                 if hint == km_lower or km_lower in hint:
                     return known_model
@@ -470,25 +430,28 @@ class CostModel:
 
         Returns None for free/local tiers (cost = $0).
         """
-        # Check adapter-specific pricing
-        adapter_models = ADAPTER_PRICING.get(adapter_name)
-        if adapter_models is not None:
-            if not adapter_models:
-                # Empty dict means free tier (ollama, github-models)
-                return None
-            if model in adapter_models:
-                return adapter_models[model]
+        # Free-tier adapters (ollama, github-models)
+        if adapter_name in _FREE_ADAPTERS:
+            return None
 
-        # Fallback to global model pricing
-        if model in MODEL_PRICING:
-            return MODEL_PRICING[model]
+        pricing = load_pricing()
+
+        # Exact match
+        if model in pricing:
+            return pricing[model]
+
+        # Substring match (e.g. versioned model name)
+        model_key = model.strip().lower()
+        for known in sorted(pricing, key=len, reverse=True):
+            if known.lower() in model_key:
+                return pricing[known]
 
         # Unknown model — use adapter default as proxy
         default_model = DEFAULT_MODELS.get(adapter_name)
-        if default_model and default_model in MODEL_PRICING:
-            return MODEL_PRICING[default_model]
+        if default_model and default_model in pricing:
+            return pricing[default_model]
 
-        # Absolute fallback: openai/gpt-4o pricing
+        # Absolute fallback: gpt-4o pricing
         return {"input": 2.50, "output": 10.00}
 
     def _derive_adapter(self, plan: Any) -> str:

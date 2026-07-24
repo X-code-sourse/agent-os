@@ -33,7 +33,7 @@ from core.models import Evidence
 
 
 # Default database path
-EVIDENCE_DB = str(Path.home() / ".intent-os" / "evidence.db")
+EVIDENCE_DB = str(Path.home() / ".intent-os" / "intent.db")
 
 
 # SQL statements

@@ -33,6 +33,7 @@ import commands.context
 import commands.evidence
 import commands.experience
 import commands.prune
+import commands.db
 
 # All cmd_* functions are imported from command modules via the registry pattern below
 CMD_MAP = {
@@ -62,6 +63,7 @@ CMD_MAP = {
     "evidence": commands.evidence.cmd_evidence,
     "experience": commands.experience.cmd_experience,
     "prune": commands.prune.cmd_prune,
+    "db": commands.db.cmd_db,
 }
 
 def build_parser() -> argparse.ArgumentParser:
@@ -290,6 +292,30 @@ def build_parser() -> argparse.ArgumentParser:
     # cost
     cost_parser = subparsers.add_parser("cost",
         help="Show API cost breakdown by agent, model, and time period")
+    cost_sub = cost_parser.add_subparsers(dest="action", help="Cost actions")
+
+    # cost (no subcommand) — show spending breakdown
+    cost_show = cost_sub.add_parser("show", help="Show API cost breakdown")
+    cost_show.add_argument("--by", choices=["agent", "model"], default=None,
+                           help="Group costs by agent or model (default: both)")
+    cost_show.add_argument("--days", type=int, default=30,
+                           help="Number of days to analyze (default: 30)")
+    cost_show.set_defaults(func=CMD_MAP["cost"])
+
+    # cost prices — manage pricing table
+    cost_prices = cost_sub.add_parser("prices", help="List or update model pricing")
+    cp_sub = cost_prices.add_subparsers(dest="prices_action", help="Pricing actions")
+    cp_list = cp_sub.add_parser("list", help="Show current pricing table")
+    cp_list.set_defaults(func=CMD_MAP["cost"])
+    cp_update = cp_sub.add_parser("update", help="Update pricing for a model")
+    cp_update.add_argument("--model", "-m", required=True, help="Model name")
+    cp_update.add_argument("--input", type=float, default=None,
+                           help="Input price per 1M tokens")
+    cp_update.add_argument("--output", type=float, default=None,
+                           help="Output price per 1M tokens")
+    cp_update.set_defaults(func=CMD_MAP["cost"])
+
+    # Default cost behavior (backward compat: just "cost" without subcommand)
     cost_parser.add_argument("--by", choices=["agent", "model"], default=None,
                              help="Group costs by agent or model (default: both)")
     cost_parser.add_argument("--days", type=int, default=30,
@@ -563,6 +589,14 @@ def build_parser() -> argparse.ArgumentParser:
     reg_rate.add_argument("capability_id", help="Capability ID (name@version)")
     reg_rate.add_argument("--score", type=float, required=True, help="Rating score (0.0 - 5.0)")
     reg_rate.set_defaults(func=CMD_MAP["registry"])
+
+    # db
+    db_parser = subparsers.add_parser("db",
+        help="Manage the unified intent.db database")
+    db_sub = db_parser.add_subparsers(dest="action", help="Database actions")
+    db_migrate = db_sub.add_parser("migrate",
+        help="Migrate data from old per-store DBs into the unified intent.db")
+    db_migrate.set_defaults(func=CMD_MAP["db"])
 
     return parser
 
