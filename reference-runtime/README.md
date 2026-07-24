@@ -132,28 +132,28 @@ No API key to sign up. No dashboard to log into. Your agent's execution data is 
 
 ---
 
-## Built on an open Execution Record standard
+## The first implementation of an Agent Execution Contract
 
-Intent OS is not just a tool. It is the first implementation of an **open standard for Agent execution records.**
+Intent OS is not just a tool. It is the first implementation of a **portable execution contract for AI agents** — the missing layer that lets an Agent be defined, executed, verified, and moved across any runtime.
 
 ```
-AI Agent → Intent OS Proxy → LLM (OpenAI / Anthropic / Ollama)
-                │
-                ├── Flight Recorder (observe / debug / cost)
-                ├── Security Guard (scan / policy / audit)
-                └── Event Store (SQLite — local, append-only, queryable)
+                    Agent Capability
+                          │
+                    ┌─────▼──────┐
+                    │  Execution  │
+                    │  Contract   │  ← Intent OS
+                    └─────┬──────┘
+                          │
+         ┌────────────────┼────────────────┐
+         │                │                │
+    Claude RT       OpenAI RT        Ollama RT
 ```
 
-**Today** it's a flight recorder — so you can trust what your agents do.
-**Tomorrow** it's an execution layer — so agents can be portable, governable, and composable across any runtime.
+The six layers of Intent OS — Identity, Execution, Verification, Governance, Interoperability — are the components of this contract. Together they answer the questions any organization must ask of an autonomous system: who was it, what did it do, what evidence did it have, and who authorized it.
 
-But the real destination is bigger than either.
+This is **Agent Accountability infrastructure.** The equivalent for autonomous AI of what audit trails are to finance and what version control is to software.
 
-The six layers of Intent OS — Identity, Execution, Verification, Governance, Interoperability — all serve one purpose: **making autonomous AI systems accountable.** When an agent acts, there must be a record of who it was, what it did, what evidence it had, and what policies it followed. This is not logging. It is accountability infrastructure.
-
-**Agent Accountability** is to the AI era what audit trails were to finance and what version control was to software. Someone needs to build that layer. Intent OS is the first attempt.
-
-[7 specs](https://github.com/haihaoxu/intentos/tree/main/specs), all frozen. 26 event types. 6 adapters. One format for every Agent execution.
+[7 specs](https://github.com/haihaoxu/intentos/tree/main/specs), all frozen. 26 event types. 6 adapters. One contract. Any runtime.
 
 ---
 

@@ -9,7 +9,9 @@
 
 ## 一句话
 
-> **Intent OS is building the accountability layer for autonomous AI systems — the identity, execution record, verification, and governance infrastructure that makes Agent actions traceable, explainable, and auditable.  When an Agent acts, the world must be able to answer: who was it, what did it do, what evidence did it have, and who authorized it.**
+> **Intent OS is building the portable execution contract for AI agents — the missing infrastructure layer between Agent Capabilities and Runtimes.**
+>
+> When a developer creates an Agent, the Execution Contract defines who it is, what it can do, what environment it needs, what it actually did, whether its claims are provable, and whether its actions were authorized. That contract must be valid on Claude, on OpenAI, on Ollama, on any runtime. This is the HTTP/Docker/Kubernetes of the AI Agent era.
 
 ---
 
