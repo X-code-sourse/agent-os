@@ -1,7 +1,7 @@
 <p align="center">
   <h1 align="center">Intent OS</h1>
-  <p align="center"><strong>AI agents are becoming autonomous.</strong></p>
-  <p align="center"><strong>But you still can't trust what you can't see.</strong></p>
+  <p align="center"><strong>Your AI agent is amazing. But every day, it starts over.</strong></p>
+  <p align="center"><strong>Give it a memory. Give it a life.</strong></p>
 </p>
 
 <p align="center">
@@ -17,14 +17,14 @@
 ```bash
 pip install intentos
 
-# Trust, but verify.
+# What happened? What went wrong? What did it cost?
 intent-os doctor
 
-# Every step your agent took.
+# Every step your agent took, every model it called.
 intent-os inspect latest
 
-# Every dollar it spent.
-intent-os cost
+# Who is this agent? What does it know? What has it learned?
+intent-os agent get <id>
 ```
 
 **You get this:**
@@ -44,17 +44,19 @@ Tokens:      4,891
 
 ---
 
-## The problem is not that AI agents aren't capable. It's that you can't trust them.
+## AI agents have amnesia.
 
-AI agents are crossing a line. They used to answer questions. Now they modify code, call APIs, write files, spend money — all on their own. And when something goes wrong, you have nothing. No trace. No evidence. No way to explain what happened.
+Claude Code spends 30 minutes solving your problem — researching, trying approaches, failing, learning from mistakes. You close the session, and **everything it learned is gone**. Tomorrow, it's a blank slate. The same struggles. The same dead ends. The same lessons it already learned.
 
-That gap — between the authority we give agents and the visibility we have into what they do — is the real bottleneck. Not model capability. Trust.
+This is the real bottleneck in AI today. Not capability. **Amnesia.**
 
-Intent OS closes that gap.
+Intent OS is the flight recorder — and the long-term memory — for your AI agents. It records everything they do, turns it into structured experience, and gives them an identity that persists across sessions.
+
+Even better: that identity — role, traits, execution history, experience — can one day move with them across runtimes. From Claude to Codex to whatever comes next. Your agent doesn't have to start over when you switch tools.
 
 ---
 
-## Give your agents a record of responsibility
+## How it works
 
 ```bash
 # Start the flight recorder
@@ -67,29 +69,13 @@ export ANTHROPIC_BASE_URL=http://localhost:8377
 # Use your agent normally. Every action is recorded.
 claude "refactor the payment module"
 
-# When you need to know what happened:
+# See what happened, what went wrong, and what it learned
 intent-os doctor
 intent-os inspect latest
 intent-os cost
 ```
 
-Works with **Claude Code, Cursor, GitHub Copilot, or any agent** that speaks OpenAI or Anthropic APIs. One environment variable. Nothing else.
-
-Everything runs locally. Your data stays on your machine. One SQLite file. No cloud. No account.
-
----
-
-## Which of these have you felt?
-
-- **"I'm afraid to give it a big task."** — The agent is capable, but the bigger the task, the more files it touches. You don't know what it changed or why. So you keep giving it small, safe work. The trust gap is capping how much you use AI.
-
-- **"Something went wrong. I have no idea what."** — Agent ran for 30 minutes. Failed. No stack trace. The file is different but you didn't see it happen. You don't know if it wrote 3 lines or deleted a function.
-
-- **"Why is my API bill $300 this month?"** — AI agents call models. A lot. Which agent? Which task? Which model? You can't answer any of those questions.
-
-- **"It worked yesterday. Today it doesn't."** — Same prompt, different result. Model changed? Context shifted? Tool state was different? There's no record of what the execution environment looked like when it succeeded.
-
-Intent OS gives you the answer to all four — before you even ask.
+Works with **Claude Code, Cursor, GitHub Copilot, or any agent** that speaks OpenAI or Anthropic APIs. One environment variable. Nothing else. Everything runs locally. One SQLite file. No cloud. No account.
 
 ---
 
@@ -97,26 +83,41 @@ Intent OS gives you the answer to all four — before you even ask.
 
 | Command | What it tells you |
 |---------|-------------------|
-| `intent-os doctor` | One-command health check: what happened, what went wrong, how to fix it |
-| `intent-os inspect latest` | Full execution timeline: every model call, tool use, cost, and duration |
-| `intent-os cost` | Spending breakdown: by agent, by model, daily trends |
-| `intent-os proxy start` | Start recording — intercepts Claude Code, Cursor, any agent |
-| `intent-os proxy doctor` | Check proxy health: running status, traffic stats, agent detection |
-| `intent-os agent create --name "My Agent"` | Give every agent a unique identity with role, traits, and avatar |
-| `intent-os agent get <id>` | Full person-card profile: role, traits, execution history, experiences |
-| `intent-os scan` | Security scan: detect dangerous tool calls and sensitive data in traces |
-| `intent-os audit report --format html` | Compliance report for teams: full audit trail with HTML/CSV export |
+| `intent-os doctor` | Health check: what happened, what went wrong, how to fix it |
+| `intent-os inspect latest` | Full timeline: every model call, tool use, cost |
+| `intent-os cost` | Spending: by agent, by model, daily trends |
+| `intent-os proxy start` | Start recording — intercepts any OpenAI/Anthropic agent |
+| `intent-os proxy doctor` | Proxy health: running status, traffic stats |
+| `intent-os agent create --name "X" --persona "..." --traits "..."` | Create an agent with a role and personality |
+| `intent-os agent get <id>` | Full person-card: role, traits, execution history, experience |
+| `intent-os experience list --agent <id>` | What this agent learned from its past runs |
+| `intent-os scan` | Security scan: dangerous tool calls in traces |
+| `intent-os audit report --format html` | Compliance report: full audit trail |
+
+---
+
+## Which of these have you felt?
+
+- **"It worked yesterday. Today it doesn't."** — Same task, different session. The agent doesn't remember what it learned last time. No experience carries over.
+
+- **"I'm afraid to give it a big task."** — The agent is capable, but the bigger the task, the more files it touches. You don't know what it changed.
+
+- **"Something went wrong. I have no idea what."** — Agent ran for 30 minutes. Failed. No stack trace. No record of what happened.
+
+- **"Why is my API bill $300 this month?"** — Which agent? Which task? Which model? You can't answer any of those questions.
+
+Intent OS gives you the answer to all four — before you even ask.
 
 ---
 
 ## For teams
 
-When multiple people use multiple agents, "what happened" becomes a business question:
+When multiple people use multiple agents, "who did what" becomes a business question:
 
 - **Accountability** — `intent-os cost --by agent` — who's spending what, on which model
 - **Governance** — `intent-os security policy apply` — define what agents can and can't do
 - **Compliance** — `intent-os audit report --format html` — full execution record, any timeframe
-- **Identity** — every agent gets an ID, every execution links back to its owner
+- **Identity** — every agent gets an ID and a profile, every execution links back to its owner
 
 ---
 
@@ -133,7 +134,7 @@ No API key to sign up. No dashboard to log into. Your agent's execution data is 
 
 ---
 
-## The first implementation of an Agent Execution Contract
+## The bigger picture: an agent that grows with you
 
 Intent OS is not just a tool. It is the first implementation of a **portable execution contract for AI agents** — the missing layer that lets an Agent be defined, executed, verified, and moved across any runtime.
 
@@ -172,4 +173,4 @@ Open-source use is free under AGPLv3. Commercial use requires a commercial licen
 
 ---
 
-*The biggest bottleneck in AI today is not capability. It's trust.*
+*Your agent doesn't have to start over every day. Give it a life.*
