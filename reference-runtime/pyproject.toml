@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "intentos"
-version = "0.15.1"
+version = "0.15.2"
 description = "Your AI agent is amazing. But every day, it starts over. Give it a memory, an identity, and a portable life — open source."
 readme = "README.md"
 requires-python = ">=3.10"

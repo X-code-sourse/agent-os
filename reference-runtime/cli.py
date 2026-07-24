@@ -77,7 +77,7 @@ def build_parser() -> argparse.ArgumentParser:
         description="Give your AI agent a memory that grows with every task. Capture, learn, and carry experience across any runtime.",
         epilog="Your agent doesn't have to start over every day. Every task makes it better.",
     )
-    parser.add_argument("--version", action="version", version="intent-os 0.15.1")
+    parser.add_argument("--version", action="version", version="intent-os 0.15.2")
 
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
