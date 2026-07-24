@@ -1,7 +1,7 @@
 <p align="center">
   <h1 align="center">Intent OS</h1>
-  <p align="center"><strong>Your AI agent ran for 20 minutes. It says "done."</strong></p>
-  <p align="center"><strong>Can you explain what it did?</strong></p>
+  <p align="center"><strong>AI agents are becoming autonomous.</strong></p>
+  <p align="center"><strong>But you still can't trust what you can't see.</strong></p>
 </p>
 
 <p align="center">
@@ -9,7 +9,7 @@
   <a href="https://haihaoxu.github.io/intentos/"><img src="https://img.shields.io/badge/docs-online-blue?style=flat" alt="Docs"></a>
   <a href="https://github.com/haihaoxu/intentos"><img src="https://img.shields.io/badge/github-haihaoxu/intentos-blue?style=flat&logo=github" alt="GitHub"></a>
   <a href="https://github.com/haihaoxu/intentos/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-AGPLv3-blue?style=flat" alt="License"></a>
-  <a href="https://github.com/haihaoxu/intentos/actions"><img src="https://img.shields.io/badge/tests-731%20passed-brightgreen?style=flat" alt="Tests"></a>
+  <a href="https://github.com/haihaoxu/intentos/actions"><img src="https://img.shields.io/badge/tests-721%20passed-brightgreen?style=flat" alt="Tests"></a>
 </p>
 
 ---
@@ -17,13 +17,13 @@
 ```bash
 pip install intentos
 
-# What just happened?
+# Trust, but verify.
 intent-os doctor
 
-# See every step your agent took
+# Every step your agent took.
 intent-os inspect latest
 
-# Track what it cost
+# Every dollar it spent.
 intent-os cost
 ```
 
@@ -42,41 +42,54 @@ Cost:        $0.08
 Tokens:      4,891
 ```
 
-No more guessing. No more "I think it called the API three times." You see exactly what happened — every model call, every tool use, every failure, every dollar.
+---
+
+## The problem is not that AI agents aren't capable. It's that you can't trust them.
+
+AI agents are crossing a line. They used to answer questions. Now they modify code, call APIs, write files, spend money — all on their own. And when something goes wrong, you have nothing. No trace. No evidence. No way to explain what happened.
+
+That gap — between the authority we give agents and the visibility we have into what they do — is the real bottleneck. Not model capability. Trust.
+
+Intent OS closes that gap.
 
 ---
 
-## You're not alone
-
-You've been here:
-
-- **"What did it actually do?"** — Claude Code says "task complete." The file changed. But you didn't see it happen. You don't know if it wrote 3 lines or deleted a function.
-- **"Why did it fail?"** — Agent runs for 30 minutes. Fails. No stack trace. No log. Just "error."
-- **"Where is the money going?"** — API bill shows $47 this month. Which agent? Which model? Which task?
-
-Intent OS is the **flight recorder for AI agents.** It intercepts every API call your agent makes and turns it into a structured, searchable execution trace. Your data stays on your machine. No cloud. No account. Just `pip install`.
-
----
-
-## Works with your agent in 30 seconds
+## Give your agents a record of responsibility
 
 ```bash
-# Start the recorder
+# Start the flight recorder
 intent-os proxy start
 
-# Point your agent at it
+# Point your agent at it — zero code changes
 export OPENAI_BASE_URL=http://localhost:8377
 export ANTHROPIC_BASE_URL=http://localhost:8377
 
-# Use your agent normally — every call is recorded
-claude "refactor this module"
+# Use your agent normally. Every action is recorded.
+claude "refactor the payment module"
 
-# See what happened
+# When you need to know what happened:
 intent-os doctor
 intent-os inspect latest
+intent-os cost
 ```
 
-Works with **Claude Code, Cursor, GitHub Copilot, or any agent** that speaks OpenAI or Anthropic APIs. Zero changes to your agent. Just one environment variable.
+Works with **Claude Code, Cursor, GitHub Copilot, or any agent** that speaks OpenAI or Anthropic APIs. One environment variable. Nothing else.
+
+Everything runs locally. Your data stays on your machine. One SQLite file. No cloud. No account.
+
+---
+
+## Which of these have you felt?
+
+- **"I'm afraid to give it a big task."** — The agent is capable, but the bigger the task, the more files it touches. You don't know what it changed or why. So you keep giving it small, safe work. The trust gap is capping how much you use AI.
+
+- **"Something went wrong. I have no idea what."** — Agent ran for 30 minutes. Failed. No stack trace. The file is different but you didn't see it happen. You don't know if it wrote 3 lines or deleted a function.
+
+- **"Why is my API bill $300 this month?"** — AI agents call models. A lot. Which agent? Which task? Which model? You can't answer any of those questions.
+
+- **"It worked yesterday. Today it doesn't."** — Same prompt, different result. Model changed? Context shifted? Tool state was different? There's no record of what the execution environment looked like when it succeeded.
+
+Intent OS gives you the answer to all four — before you even ask.
 
 ---
 
@@ -84,26 +97,25 @@ Works with **Claude Code, Cursor, GitHub Copilot, or any agent** that speaks Ope
 
 | Command | What it tells you |
 |---------|-------------------|
-| `intent-os doctor` | One-command health check: what your agent did, what went wrong, how to fix it |
+| `intent-os doctor` | One-command health check: what happened, what went wrong, how to fix it |
 | `intent-os inspect latest` | Full execution timeline: every model call, tool use, cost, and duration |
 | `intent-os cost` | Spending breakdown: by agent, by model, daily trends |
 | `intent-os proxy start` | Start recording — intercepts Claude Code, Cursor, any agent |
 | `intent-os proxy doctor` | Check proxy health: running status, traffic stats, agent detection |
-| `intent-os agent create --name "My Agent"` | Register agent identity for tracking across sessions |
+| `intent-os agent create --name "My Agent"` | Give every agent an identity — track who did what across sessions |
 | `intent-os scan` | Security scan: detect dangerous tool calls and sensitive data in traces |
 | `intent-os audit report --format html` | Compliance report for teams: full audit trail with HTML/CSV export |
-| `intent-os event prune --older-than 90` | Data lifecycle: clean up old traces, keep your disk under control |
 
 ---
 
 ## For teams
 
-As your team grows:
+When multiple people use multiple agents, "what happened" becomes a business question:
 
-- **Cost tracking** — `intent-os cost --by agent` — who's spending what, on which model
-- **Security policies** — define what agents can and can't do: `intent-os security policy apply`
-- **Compliance audit** — full execution records: `intent-os audit report --format html`
-- **Agent identity** — every agent gets an ID, every execution links back to its owner
+- **Accountability** — `intent-os cost --by agent` — who's spending what, on which model
+- **Governance** — `intent-os security policy apply` — define what agents can and can't do
+- **Compliance** — `intent-os audit report --format html` — full execution record, any timeframe
+- **Identity** — every agent gets an ID, every execution links back to its owner
 
 ---
 
@@ -120,7 +132,9 @@ No API key to sign up. No dashboard to log into. Your agent's execution data is 
 
 ---
 
-## Architecture
+## Built on an open Execution Record standard
+
+Intent OS is not just a tool. It is the first implementation of an **open standard for Agent execution records.**
 
 ```
 AI Agent → Intent OS Proxy → LLM (OpenAI / Anthropic / Ollama)
@@ -130,13 +144,16 @@ AI Agent → Intent OS Proxy → LLM (OpenAI / Anthropic / Ollama)
                 └── Event Store (SQLite — local, append-only, queryable)
 ```
 
-Intent OS is **building the execution layer for AI agents.** Today it's a flight recorder. Tomorrow it will make agents portable, governable, and composable across any runtime.
+**Today** it's a flight recorder — so you can trust what your agents do.
+**Tomorrow** it's an execution layer — so agents can be portable, governable, and composable across any runtime.
+
+[7 specs](https://github.com/haihaoxu/intentos/tree/main/specs), all frozen. 26 event types. 6 adapters. One format for every Agent execution.
 
 ---
 
 ## Tested
 
-**731 tests, 8 skipped, 0 failures** — CI across Python 3.10, 3.11, and 3.12.
+**721 tests, 8 skipped, 0 failures** — CI across Python 3.10, 3.11, and 3.12.
 
 ---
 
@@ -148,4 +165,4 @@ Open-source use is free under AGPLv3. Commercial use requires a commercial licen
 
 ---
 
-*Built by one person, for every developer who's asked "what did my agent just do?"*
+*The biggest bottleneck in AI today is not capability. It's trust.*
