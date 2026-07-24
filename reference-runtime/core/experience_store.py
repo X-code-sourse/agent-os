@@ -356,6 +356,7 @@ class ExperienceStore:
         type: str | None = None,
         domain: str | None = None,
         limit: int = 50,
+        sort_by: str | None = None,
     ) -> list[dict[str, Any]]:
         """List experiences with optional filters.
 
@@ -382,9 +383,15 @@ class ExperienceStore:
             params.append(f"%{domain}%")
 
         where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        if sort_by == "confidence":
+            order_clause = "confidence DESC, created_at DESC"
+        elif sort_by == "usage":
+            order_clause = "usage_count DESC, created_at DESC"
+        else:
+            order_clause = "created_at DESC"
         query = (
             f"SELECT * FROM experiences {where} "
-            f"ORDER BY created_at DESC LIMIT ?"
+            f"ORDER BY {order_clause} LIMIT ?"
         )
         params.append(limit)
 

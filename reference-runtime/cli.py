@@ -34,6 +34,7 @@ import commands.evidence
 import commands.experience
 import commands.prune
 import commands.db
+import commands.feedback
 
 # All cmd_* functions are imported from command modules via the registry pattern below
 CMD_MAP = {
@@ -64,6 +65,7 @@ CMD_MAP = {
     "experience": commands.experience.cmd_experience,
     "prune": commands.prune.cmd_prune,
     "db": commands.db.cmd_db,
+    "feedback": commands.feedback.cmd_feedback,
 }
 
 def build_parser() -> argparse.ArgumentParser:
@@ -73,7 +75,7 @@ def build_parser() -> argparse.ArgumentParser:
         description="Intent OS Reference Runtime - Open AI Capability Interoperability",
         epilog="Phase 0 - Prove that one Manifest can run on multiple runtimes.",
     )
-    parser.add_argument("--version", action="version", version="intent-os 0.12.0")
+    parser.add_argument("--version", action="version", version="intent-os 0.13.0")
 
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
@@ -619,6 +621,19 @@ def build_parser() -> argparse.ArgumentParser:
     reg_rate.add_argument("capability_id", help="Capability ID (name@version)")
     reg_rate.add_argument("--score", type=float, required=True, help="Rating score (0.0 - 5.0)")
     reg_rate.set_defaults(func=CMD_MAP["registry"])
+
+    # feedback
+    feedback_parser = subparsers.add_parser("feedback",
+        help="Record user feedback as an agent experience")
+    feedback_parser.add_argument("agent_id", help="Agent ID to give feedback on")
+    feedback_parser.add_argument("--helpful", action="store_true",
+                                 help="Mark feedback as helpful")
+    feedback_parser.add_argument("--not-helpful", nargs="?", const="",
+                                 default=False,
+                                 help="Mark feedback as not helpful")
+    feedback_parser.add_argument("--observation", "-o", default="",
+                                 help="What the feedback is about")
+    feedback_parser.set_defaults(func=CMD_MAP["feedback"])
 
     # db
     db_parser = subparsers.add_parser("db",

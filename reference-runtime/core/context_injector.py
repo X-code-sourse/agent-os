@@ -139,11 +139,21 @@ def build_injection_prompt(agent_id: str,
         except Exception:
             pass
     else:
-        # Fall back to just listing recent experiences
+        # Cross-session active loading: top confident + recent
         try:
             from core.experience_store import ExperienceStore
             exp_store = ExperienceStore(db_path)
-            exps = exp_store.list(agent_id=agent_id, limit=max_experiences)
+            # Top 3 by confidence
+            confident = exp_store.list(agent_id=agent_id, sort_by="confidence",
+                                        limit=max_experiences)
+            # Plus most recent (deduplicated)
+            recent = exp_store.list(agent_id=agent_id, limit=max_experiences)
+            seen = {e.get("observation", "") for e in confident}
+            for r in recent:
+                if r.get("observation", "") not in seen:
+                    confident.append(r)
+                    seen.add(r.get("observation", ""))
+            exps = confident[:max_experiences]
         except Exception:
             exps = []
 

@@ -4,6 +4,19 @@ All notable changes to Intent OS are documented here.
 
 ---
 
+## v0.13.0 (2026-07-24)
+
+### Active Memory — Agent Self-Records, User Feedback, Cross-Session Recall
+
+- **Self-record on failure** — When an LLM call fails, the proxy immediately records a `failure_pattern` experience with provider, model, error message, and structured trigger. No need to wait for the auto-extractor (which runs every 50 calls).
+- **`intent-os feedback` command** — Users can directly record feedback: `intent-os feedback <agent_id> --helpful --observation "..."` or `--not-helpful`. Creates a `user_feedback` experience with structured fields.
+- **Doctor now has actionable feedback** — The doctor output's "Was this diagnosis helpful?" hint now shows runnable `intent-os feedback` commands instead of generic advice.
+- **Cross-session active loading** — When the context injector has no user query to search against, it proactively loads top experiences (by confidence) plus recent ones, so every new session starts with the agent's most relevant knowledge.
+- **ExperienceStore sort_by** — `sort_by="confidence"` and `sort_by="usage"` parameters added to `list()` for flexible querying.
+- **7 new tests** — Feedback helpful/not-helpful, self-record, sort_by confidence and default. 902 tests total, zero regressions.
+
+---
+
 ## v0.12.0 (2026-07-24)
 
 ### Environment + Relationship Context — SPEC-0010 Complete

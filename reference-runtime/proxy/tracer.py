@@ -167,6 +167,14 @@ class AgentTracer:
             if self._call_count % self._extract_threshold == 0:
                 self._auto_extract(agent_id)
 
+        # ── F1: Self-record on failure ──
+        if status == "failure" and agent_id and error_message:
+            try:
+                self._self_record(agent_id, provider or "unknown",
+                                  model or "unknown", error_message)
+            except Exception:
+                pass
+
         return self.trace_id
 
     def _auto_extract(self, agent_id: str) -> None:
@@ -183,6 +191,25 @@ class AgentTracer:
             extractor.extract_all(agent_id)
         except Exception:
             pass  # Auto-extraction is best-effort
+
+    def _self_record(self, agent_id: str, provider: str,
+                     model: str, error_message: str) -> None:
+        """Immediately record a failure experience — never blocks."""
+        from core.experience_store import ExperienceStore
+
+        exp_store = ExperienceStore()
+        obs = f"LLM call failed: {provider}/{model} - {error_message[:150]}"
+        exp_store.create(
+            agent_id=agent_id,
+            type="failure_pattern",
+            observation=obs,
+            recommendation="Check API status or retry with backoff",
+            confidence=min(0.95, 0.5 + 0.1 * min(self._call_count, 5)),
+            structured_situation=f"calling {provider}/{model}",
+            structured_mistake=error_message[:150],
+            structured_lesson="Retry or check API availability",
+            structured_trigger=f"{provider} {model} failure",
+        )
 
 
 
